@@ -10,6 +10,9 @@ COMMAND_LINK="/root/.config/opencode/commands/guardian.md"
 SKILL_DIR="$(dirname "$SKILL_LINK")"
 CMD_DIR="$(dirname "$COMMAND_LINK")"
 
+# Ensure /var/guardian directory exists
+mkdir -p /var/guardian
+
 # Initialize skills-global.json if missing
 if [ ! -f /var/guardian/skills-global.json ]; then
   echo '{"version":1,"skills":{},"last_absorb":null}' > /var/guardian/skills-global.json
