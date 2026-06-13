@@ -1,18 +1,18 @@
 # Nexxoria Guardian
 
-Universal project guardian for OpenCode AI coding sessions. Auto-detects projects, manages documentation, runs hooks, and integrates with CodeGraph, OpenSpec/SDD, and Engram.
+Universal project guardian for OpenCode AI coding sessions. Auto-detects projects, prevents LLMs from breaking things, manages documentation, runs hooks, and integrates with CodeGraph, OpenSpec/SDD, and Engram.
 
 ## Features
 
-- **Auto-detection** — detects project by git remote or PWD
-- **Persistent config** — per-project settings at `/srv/guardian/projects/<slug>/`
-- **OpenSpec integration** — integrates SDD workflow into change management
-- **CodeGraph** — code intelligence for impact analysis and context
-- **Engram** — persistent memory for decisions and session summaries
-- **Documentation** — auto-generates from code (CodeGraph) + narrative docs (documentation-writer)
-- **Hooks** — pre/post change, pre/post deploy
+- **Flow mode** — operates automatically, no commands needed day-to-day
+- **Auto-detection** — project by git remote or PWD
+- **Persistent config** — per-project at `/var/guardian/projects/<slug>/`
+- **5-step change workflow** — identify → consult → analyze → evaluate → execute
+- **Hooks** — pre/post change, pre/post deploy (automatic)
+- **Documentation** — auto-generates from code + narrative docs
 - **Stack helpers** — build, dev, test, lint, deploy, logs
-- **Skill registry** — absorbs and rates installed skills
+- **Skill registry** — absorbs & rates installed skills (global + per-project)
+- **Audit** — JSON audit log with violations, change history, trends
 
 ## Installation
 
@@ -24,17 +24,34 @@ chmod +x install.sh
 gentle-ai skill-registry refresh
 ```
 
-## Usage
+## Commands (optional — guardian works without them)
+
+| Command | What it does |
+|---------|-------------|
+| `@guardian` | Load + detect project |
+| `@guardian setup` | Re-run setup wizard |
+| `@guardian absorb` | Re-scan + rate skills |
+| `@guardian status` | Dashboard: rules, last changes |
+| `@guardian report` | Violations, trends |
+| `@guardian check` | Verify rules & protected paths |
+| `@guardian protect <path>` | Add protected path |
+| `@guardian snapshot <path>` | Backup file before modifying |
+| `@guardian forget <slug>` | Remove project from guardian |
+| `@guardian docs scan` | Auto-generate docs from code |
+| `@guardian docs write` | Narrative documentation |
+| `@guardian rollback` | Suggest reverting last change |
+| `@guardian build|test|...` | Stack helpers |
+| `@guardian git branch|commit` | Git helpers |
+
+## Architecture
 
 ```
-@guardian                 — load skill and detect project
-@guardian setup           — re-run setup wizard
-@guardian absorb          — re-scan and rate skills
-@guardian docs scan       — auto-generate docs from code
-@guardian docs write      — invoke documentation-writer
-@guardian sdd status      — show OpenSpec/SDD status
-@guardian build|test|...  — stack helpers
-@guardian hooks           — show hook status
+/srv/guardian/                  ← REPO (git-versionable)
+/var/guardian/skills-global.json  ← ONE global skill index
+/var/guardian/projects/<slug>/    ← per-project data
+  ├── config.yaml
+  ├── audit.json
+  └── skills.json
 ```
 
 ## Requirements

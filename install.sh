@@ -18,6 +18,12 @@ mkdir -p "$SKILL_DIR"
 mkdir -p "$CMD_DIR"
 mkdir -p /var/guardian/projects
 
+# Initialize skills-global.json if missing
+if [ ! -f /var/guardian/skills-global.json ]; then
+  echo '{"version":1,"skills":{},"last_absorb":null}' > /var/guardian/skills-global.json
+  echo "  skills-global.json created"
+fi
+
 # Create symlinks
 if [ -f "$SKILL_LINK" ] || [ -L "$SKILL_LINK" ]; then
   rm "$SKILL_LINK"

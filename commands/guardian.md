@@ -1,9 +1,26 @@
 # @guardian
 
-Carga el skill Nexxoria Guardian para el proyecto actual.
+Carga Nexxoria Guardian y detecta el proyecto actual.
 
-Detecta el proyecto por git remote o PWD, carga config de
-`/srv/guardian/projects/<slug>`, y activa el workflow completo
-(detección de stack, documentación, hooks, helpers).
+En el día a día NO necesitás comandos — el guardian opera solo.
+Usá estos solo cuando quieras control manual:
 
-Usar al iniciar una sesión de trabajo o al cambiar de proyecto.
+| Comando | Qué hace |
+|---------|----------|
+| `@guardian` | Cargar + detectar proyecto |
+| `@guardian setup` | Re-ejecutar wizard de configuración |
+| `@guardian absorb` | Re-escanear + calificar skills |
+| `@guardian status` | Dashboard: reglas activas, últimos cambios |
+| `@guardian report` | Violaciones, tendencias, reglas más/menos seguidas |
+| `@guardian check` | Verificar reglas y paths protegidos |
+| `@guardian protect <path>` | Agregar path protegido |
+| `@guardian snapshot <path>` | Backup de archivo antes de modificar |
+| `@guardian forget <slug>` | Eliminar proyecto del guardian |
+| `@guardian docs scan` | Auto-generar docs desde el código |
+| `@guardian docs write` | Documentación narrativa |
+| `@guardian rollback` | Sugerir revertir último cambio |
+| `@guardian hooks` | Estado de hooks |
+| `@guardian build|dev|test|lint|typecheck|deploy|logs` | Stack helpers |
+| `@guardian git branch|commit` | Git helpers |
+
+Todo comando chequea config.yaml del proyecto actual.

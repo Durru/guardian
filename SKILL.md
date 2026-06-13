@@ -1,16 +1,39 @@
 # Nexxoria Guardian
 
 Universal project guardian for OpenCode AI sessions. Auto-detects projects,
-manages documentation, runs hooks, integrates CodeGraph + OpenSpec/SDD + Engram.
+prevents LLMs from breaking things, manages docs, runs hooks, integrates
+CodeGraph + OpenSpec/SDD + Engram.
 
 ## Triggers
 
-- User runs `@guardian`
-- User mentions "guardian", "proyecto", "project", "setup", "docs scan"
-- Starting work in a new or existing project
-- User asks about project structure, documentation, or stack helpers
+- Starting work in a project
+- User asks for a code change
+- User mentions "guardian", "proyecto", "project"
+- User runs `@guardian` or any `@guardian <subcommand>`
+- Before deploy, after change, on structural refactors
 
-## Architecture overview
+---
+
+## Rule #1: Flow mode (automatic)
+
+**No need to memorize commands.** The guardian operates in flow mode:
+
+| Cuándo | Qué hace el guardian |
+|--------|---------------------|
+| Entrás a un proyecto | Detecta, carga config, reporta estado |
+| Pedís un cambio | Ejecuta workflow 5 pasos automáticamente |
+| Algo está protegido | Frena y pregunta antes de tocar |
+| Detecta duplicados | "Esto ya existe en X. ¿Crear otro?" |
+| Algo cambia de estructura | "Detecté cambios. ¿Actualizo docs?" |
+| Antes de deploy | Corre checks automáticos |
+| Algo va mal | Sugiere `@guardian report` o `@guardian rollback` |
+
+Comandos existen SOLO para cuando querés control manual. El día a día es
+sin comandos — el AI lo resuelve solo.
+
+---
+
+## Architecture
 
 ```
 /srv/guardian/                  ← REPO (git-versionable, GitHub)
@@ -20,46 +43,52 @@ manages documentation, runs hooks, integrates CodeGraph + OpenSpec/SDD + Engram.
 ├── README.md                    ← for GitHub
 └── .gitignore
 
-/var/guardian/projects/<slug>/  ← DATA (per-project, NOT in repo)
-├── config.yaml                  ← detected stack, rules, paths
-├── audit.log                    ← change audit trail
-└── skills.json                  ← absorbed skill ratings
+/var/guardian/
+├── skills-global.json           ← global skill index (ONE file)
+├── projects/<slug>/             ← DATA (per-project, NOT in repo)
+│   ├── config.yaml              ← detected stack, rules, paths
+│   ├── audit.json               ← change audit trail (JSON)
+│   └── skills.json              ← relevant skill references
 ```
 
 ---
 
-## 1. Detection + Config
+## 1. Detection + lazy load
 
-On load (`@guardian` or session start):
+On session start or `@guardian`:
 
 ```
 1. git remote origin → extract repo name → slug
 2. If no git: basename $PWD → slug
 3. If /var/guardian/projects/<slug>/config.yaml exists:
-   → load config + skills.json
+   → load ONLY that project's config.yaml
    → report: "Guardian activo para <slug> (stack: <detected>)"
 4. If not found:
    → run Setup Wizard
 ```
 
+**skills-global.json se carga solo cuando hace falta** (absorb, check, status).
+No se lee en cada sesión. skills.json por proyecto solo tiene nombres de
+skills relevantes, no la data completa.
+
 ### Setup Wizard
 
 ```
-1. Confirm PROJECT_ROOT (detected from PWD)
+1. Confirm PROJECT_ROOT
 2. Scan for package.json / Cargo.toml / pyproject.toml / composer.json
-3. Detect stack (framework, language, CSS approach, test runner, linter)
-4. Detect OpenSpec: check /root/p/openspec/
+3. Detect stack (framework, language, CSS, test runner, linter)
+4. Detect OpenSpec: /root/p/openspec/
    └── Ask mode: openspec | engram | hybrid (default: hybrid)
-5. Detect CodeGraph: check if .codegraph/ exists in project root
-   └── If missing → suggest `codegraph init`
-6. Ask: which paths are protected docs? (default: none)
-7. Ask: any project rules? (e.g. "no modificar X sin consultar")
+5. Detect CodeGraph: .codegraph/ exists?
+   └── If missing → suggest codegraph init
+6. Ask: protected paths? (default: none)
+7. Ask: project rules? (e.g. "no modificar .env")
 8. Save /var/guardian/projects/<slug>/config.yaml
-9. Run @guardian docs scan + @guardian absorb
+9. Run absorb + docs scan
 10. mem_save: "Project <slug> registered in guardian"
 ```
 
-### config.yaml structure
+### config.yaml
 
 ```yaml
 project_root: /srv/myapp
@@ -71,286 +100,225 @@ stack:
   dev: npm run dev
   test: npm test
   lint: npm run lint
-  typecheck: npm run typecheck
   deploy: pm2 restart myapp
   logs: pm2 logs myapp --lines 20
 docs:
   protected: []
-  auto_generated: true
-  last_scan: null
+  last_scan: ~
 openspec:
   enabled: true
   mode: hybrid
 codegraph:
   enabled: true
   path: /srv/myapp
-hooks:
-  pre_change: true
-  post_change: true
-  pre_deploy: true
-  post_deploy: true
 rules: []
 audit: true
 ```
 
 ---
 
-## 2. Change Workflow (5 steps)
+## 2. Change workflow (5 steps — automatic)
 
-Execute this sequence for ANY code change. Do not skip steps.
+Execute on ANY code change. Do not skip.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 1. IDENTIFY                                             │
-│    Classify the change:                                 │
-│    - component (new/modify visual component)            │
-│    - api (route, controller, endpoint)                  │
-│    - style (CSS, theme, layout)                         │
-│    - structure (files, directories, config)             │
-│    - bugfix                                             │
-│    - refactor                                           │
-│    - feature (larger, multi-step)                       │
+│    Classify: component / api / style / structure /      │
+│              bugfix / refactor / feature                 │
 ├─────────────────────────────────────────────────────────┤
 │ 2. CONSULT                                              │
-│    ├── Read project docs: STYLE.md, COMPONENTS.md,      │
-│    │   API_SPEC.md, ARCHITECTURE.md (if they exist)     │
-│    ├── OpenSpec: search /root/p/openspec/specs/ for     │
-│    │   specs related to the change                      │
-│    │   └── If no spec found and change is 'feature':    │
-│    │       suggest starting an SDD change               │
-│    ├── Engram: mem_search for previous decisions on     │
-│    │   this topic                                       │
+│    ├── Read project docs if they exist                  │
+│    ├── OpenSpec: search /root/p/openspec/specs/         │
+│    │   └── If feature + no spec → suggest SDD           │
+│    ├── Engram: mem_search for past decisions             │
 │    └── config.yaml rules — check restrictions           │
 ├─────────────────────────────────────────────────────────┤
-│ 3. ANALYZE with CodeGraph                               │
-│    ├── codegraph context "<task description>"           │
-│    ├── codegraph impact <symbol> if touching existing   │
-│    ├── codegraph callers/callees <symbol> for flow      │
-│    └── codegraph query <term> to find related code      │
+│ 3. ANALYZE                                              │
+│    ├── CodeGraph context/impact/callers/callees         │
+│    └── Check for existing code to avoid duplicates      │
 ├─────────────────────────────────────────────────────────┤
 │ 4. EVALUATE                                             │
-│    ├── Does the component / function already exist?     │
-│    ├── Will the change break anything?                  │
-│    ├── Are the docs up to date?                         │
-│    └── Is there a spec that must be followed?           │
+│    ├── ¿Ya existe? ¿Se rompe algo? ¿Docs actualizados?  │
+│    └── ¿Hay spec que seguir?                            │
 ├─────────────────────────────────────────────────────────┤
 │ 5. EXECUTE                                              │
-│    ├── Present findings to user:                        │
-│    │   "Detected: <type>. Found <N> related docs.      │
-│    │    Impact: <N> symbols affected. ¿Procedo?"       │
-│    ├── On approval:                                     │
-│    │   ├── Run pre-change hook                          │
-│    │   ├── Make the change                              │
-│    │   ├── Run post-change hook                         │
-│    │   └── Register in audit.log + mem_save             │
+│    ├── Present to user: "Tipo: X. Impacto: Y. ¿Procedo?"│
+│    ├── On approval: pre-change hook → change →          │
+│    │   post-change hook → audit.json + mem_save         │
 │    └── On rejection: wait                               │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### When to suggest SDD
-
-If the change is type `feature` (multi-step, >1 file, involves design decisions)
-and no OpenSpec spec exists for it:
-
-> "Este cambio parece grande. ¿Querés crear un SDD spec primero?
->  Usá /sdd-new para empezar."
-
 ---
 
-## 3. Hooks
+## 3. Hooks (automatic)
 
-### Pre-change hook
-
-Runs BEFORE writing any code:
+### Pre-change (before writing code)
 
 ```
-1. codegraph impact <symbol> — check what breaks
-2. Verify project docs exist and reference the area
-3. If docs are out of date → warn user
+1. Check if affected paths are protected in config.yaml
+2. If protected → STOP + ask user
+3. Check if file exists and is about to be deleted
+   → "¿Estás seguro? Esto elimina X."
 4. Check Engram for relevant past decisions
 ```
 
-### Post-change hook
-
-Runs AFTER code is written:
+### Post-change (after code written)
 
 ```
-1. Run tests (config.stack.test) if available
-2. Run linter (config.stack.lint) if available
-3. Detect new components/APIs added or removed
-4. If structural change detected:
-   → "Detected new components. ¿Actualizo COMPONENTS.md?"
-5. Guard en audit.log + mem_save
+1. Run tests (config.stack.test) if configured
+2. Run linter (config.stack.lint) if configured
+3. Detect new/deleted components or routes
+4. If structural change:
+   → "Nuevo componente. ¿Actualizo docs?"
+5. Write to audit.json + mem_save
 ```
 
-### Pre-deploy hook
-
-Runs before deploy:
+### Pre-deploy (before deploy)
 
 ```
 1. Run build (config.stack.build)
-2. If build fails → STOP, report error
-3. Check OpenSpec: if there's an active SDD change
-   → "Hay un SDD change activo. ¿Corro sdd-verify?"
+2. If build fails → STOP
+3. If active SDD change → suggest sdd-verify
 ```
 
-### Post-deploy hook
-
-Runs after deploy:
+### Post-deploy (after deploy)
 
 ```
-1. Smoke test: curl health endpoint (if configured)
-2. Write to audit.log
+1. Smoke test (curl health endpoint)
+2. Write to audit.json
 3. mem_save session summary
 ```
 
-Hook results go to audit.log:
+---
 
+## 4. Audit log (JSON)
+
+```json
+[
+  {"ts":"2026-06-12T10:30:00","type":"change","file":"src/components/Navbar.tsx","desc":"Added mobile menu","status":"ok"},
+  {"ts":"2026-06-12T10:32:00","type":"pre_deploy","build":"passed","deploy":"ok","status":"ok"},
+  {"ts":"2026-06-12T10:35:00","type":"violation","file":".env","desc":"Intentó modificar path protegido","status":"blocked"}
+]
 ```
-[2026-06-12T10:30:00] PRE_CHANGE | component: Navbar | impact: 2 files | OK
-[2026-06-12T10:32:00] CHANGE | type: component | file: src/components/Navbar.tsx | desc: Added mobile menu
-[2026-06-12T10:32:15] POST_CHANGE | tests: passed | lint: passed | docs_suggested: true | OK
-```
+
+Guarda en `/var/guardian/projects/<slug>/audit.json`.
 
 ---
 
-## 4. Documentation (unified)
+## 5. Documentation (unified)
 
-Two approaches, unified in one system.
-
-### Auto-generation from code (`@guardian docs scan`)
+### Auto-generation from code (automatic + @guardian docs scan)
 
 ```
 1. codegraph files → project tree
-2. Scan for component files (JSX/TSX patterns)
-3. Scan for API routes (app router, express, etc.)
-4. Compare with existing docs
-5. Generate/update:
-   ├── STYLE.md — from detected stack (framework, CSS, conventions)
-   ├── COMPONENTS.md — components with paths and props
-   ├── API_SPEC.md — routes with methods and params
-   ├── ARCHITECTURE.md — directory structure
-   └── AGENTS.md — invoke agents-md-generator if installed
-6. Save to project root (not in /srv/guardian/)
-7. Update last_scan timestamp in config.yaml
+2. Scan component files (JSX/TSX patterns)
+3. Scan API routes
+4. Generate/update:
+   ├── STYLE.md, COMPONENTS.md, API_SPEC.md, ARCHITECTURE.md
+   └── AGENTS.md (via agents-md-generator)
+5. Save to project root
+6. Update last_scan in config.yaml
 ```
 
-### Narrative docs (`@guardian docs write`)
+### Narrative docs (@guardian docs write)
 
 ```
-1. Ask user what they need:
-   ├── "tutorial" → invokes documentation-writer
-   ├── "how-to" → invokes documentation-writer
-   ├── "explanation" → invokes documentation-writer
-   ├── "reference" → invokes documentation-writer
-   └── "AGENTS.md" → invokes agents-md-generator
-2. Pass project context (stack, tree, key files)
-3. Save output to project root
+1. Ask what kind: tutorial / how-to / explanation / reference
+2. Invoke documentation-writer with project context
 ```
 
-### Sync (automatic, in post-change hook)
+### Sync (automatic in post-change)
 
 ```
-After any change:
-  - If a new component was added and COMPONENTS.md exists
-    → "Nuevo componente detectado. ¿Lo agrego a COMPONENTS.md?"
-  - If a new route was added and API_SPEC.md exists
-    → "Nueva ruta detectada. ¿La agrego a API_SPEC.md?"
-  - If docs exist but are stale (last_scan > 7 days)
-    → "Los docs tienen >7 días. ¿Corro @guardian docs scan?"
+- New component + COMPONENTS.md exists
+  → "¿Actualizo COMPONENTS.md?"
+- Docs stale > 7 days
+  → "¿Corro @guardian docs scan?"
 ```
 
 ---
 
-## 5. Stack helpers
+## 6. Skill registry & absorb
 
-Run these using the configured commands from config.yaml.
+### Global (ONE file for all projects)
 
-| Command | Action |
-|---------|--------|
-| `@guardian build` | Run build command for detected stack |
-| `@guardian dev` | Run dev server command |
-| `@guardian test` | Run test suite |
-| `@guardian lint` | Run linter |
-| `@guardian typecheck` | Run type checker |
-| `@guardian deploy` | Run deploy command |
-| `@guardian logs` | Show recent logs |
-| `@guardian git branch <name>` | Create branch with project prefix |
-| `@guardian git commit` | Stage changes and create conventional commit |
+`/var/guardian/skills-global.json` — skills completos con rating.
 
-If a command is not configured:
-> "No hay comando configurado para <action>. Configuralo con @guardian setup."
+### Per-project (just references)
 
----
+`/var/guardian/projects/<slug>/skills.json` — SOLO nombres de skills relevantes.
 
-## 6. Skill registry & rating
+```json
+{
+  "relevant": ["007", "bug-hunter", "documentation-writer"],
+  "last_absorb": "2026-06-12"
+}
+```
 
-### Absorption (`@guardian absorb`)
-
-Scans all installed skills and builds a searchable registry:
+### Absorption (@guardian absorb)
 
 ```
 1. Scan /root/.agents/skills/*/SKILL.md
 2. Scan /root/.config/opencode/skills/*/SKILL.md
-3. For each SKILL.md:
-   └── Extract: name, description, triggers
-4. Rate each skill (0-50):
-   ├── Clarity (0-10) — is the purpose clear?
-   ├── Triggers (0-10) — are triggers well-defined?
-   ├── Workflow (0-10) — does it have a clear process?
-   ├── DOs/DON'Ts (0-10) — are there practical guardrails?
-   └── Examples (0-10) — are there concrete examples?
-5. Convert to stars:
-   ├── 0-16 → ★
-   ├── 17-33 → ★★
-   └── 34-50 → ★★★
+3. Extract: name, description, triggers
+4. Rate (0-50): clarity + triggers + workflow + DOs/DON'Ts + examples
+5. Stars: 0-16★ / 17-33★★ / 34-50★★★
 6. Save global: /var/guardian/skills-global.json
-7. Save per-project: /var/guardian/projects/<slug>/skills.json (filtered by relevance)
+7. For each project: determine relevant skills → save references
 ```
 
-### Skill usage in workflow
-
-When the change workflow needs a specialized skill (e.g. doc writing,
-bug hunting), check the registry for the best-rated skill matching
-the need and suggest loading it.
+**Flujo automático:** se ejecuta en setup wizard y cuando el usuario menciona
+"nuevo skill" o "actualizar skills". No requiere comando en el día a día.
 
 ---
 
-## 7. Integrations
+## 7. Stack helpers (automatic + manual)
 
-| Tool | Integration point |
-|------|-------------------|
-| **Engram** | `mem_search` in step 2 (consult), `mem_save` after changes and sessions |
-| **CodeGraph** | `codegraph {context,impact,callers,callees,query,files}` in step 3 (analyze) |
-| **OpenSpec/SDD** | Check specs in step 2, suggest SDD for features, link in audit |
-| **documentation-writer** | Invoke for narrative docs (`@guardian docs write`) |
-| **agents-md-generator** | Invoke for AGENTS.md generation |
+When user asks to build/test/deploy → run configured command from config.yaml.
+
+```
+@guardian build      @guardian test       @guardian dev
+@guardian lint       @guardian typecheck  @guardian deploy
+@guardian logs       @guardian git branch @guardian git commit
+```
+
+If command not configured:
+> "No hay comando configurado para <action>. Usá @guardian setup."
 
 ---
 
-## 8. Commands
+## 8. Integrations (optional — external tools)
 
-| Command | Action |
-|---------|--------|
-| `@guardian` | Load skill + detect project (setup wizard if new) |
+| Tool | Integration |
+|------|-------------|
+| **Engram** | mem_search in step 2, mem_save after changes and sessions |
+| **CodeGraph** | context/impact/callers/callees in step 3 |
+| **OpenSpec/SDD** | Check specs in step 2, suggest SDD for features |
+| **documentation-writer** | Narrative docs (@guardian docs write) |
+| **agents-md-generator** | AGENTS.md generation |
+
+All optional. Guardian works fully without them.
+
+---
+
+## 9. Commands (reference — not required)
+
+| Command | What it does |
+|---------|-------------|
+| `@guardian` | Load skill + detect project |
 | `@guardian setup` | Re-run setup wizard |
-| `@guardian absorb` | Re-scan and rate all skills |
-| `@guardian docs scan` | Auto-generate/update docs from code |
-| `@guardian docs write` | Invoke documentation-writer for narrative docs |
-| `@guardian sdd status` | Show OpenSpec/SDD status and active changes |
-| `@guardian hooks` | Show which hooks are enabled |
+| `@guardian absorb` | Re-scan + rate all skills |
+| `@guardian status` | Dashboard: rules, last changes, protected paths |
+| `@guardian report` | Violations, most/least followed rules |
+| `@guardian check` | Verify all rules and protected paths |
+| `@guardian protect <path>` | Add a protected path |
+| `@guardian snapshot <path>` | Backup a file before modifying |
+| `@guardian forget <slug>` | Remove project from guardian |
+| `@guardian docs scan` | Auto-generate docs from code |
+| `@guardian docs write` | Narrative documentation |
+| `@guardian rollback` | Suggest reverting last change |
+| `@guardian hooks` | Show hook status |
 | `@guardian build | dev | test | lint | typecheck | deploy | logs` | Stack helpers |
-| `@guardian git branch <name>` | Git branch helper |
-| `@guardian git commit` | Git commit helper |
-
----
-
-## 9. Project ephemeral memory
-
-The guardian keeps no in-session state beyond what's in config.yaml
-and skills.json. All cross-session state lives in:
-
-- `/var/guardian/projects/<slug>/config.yaml` — project config
-- `/var/guardian/projects/<slug>/audit.log` — change log
-- `/var/guardian/projects/<slug>/skills.json` — project skill index
-- **Engram** — persistent memory (decisions, summaries)
+| `@guardian git branch | commit` | Git helpers |
