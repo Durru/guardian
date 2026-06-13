@@ -19,7 +19,7 @@ Universal project guardian for OpenCode AI coding sessions. Auto-detects project
 ## Installation
 
 ```bash
-git clone <repo-url> /srv/guardian
+git clone https://github.com/Durru/guardian /srv/guardian
 cd /srv/guardian
 chmod +x install.sh
 ./install.sh
@@ -33,10 +33,10 @@ gentle-ai skill-registry refresh
 | `@guardian` | Load + detect project |
 | `@guardian setup` | Re-run setup wizard |
 | `@guardian absorb` | Re-scan + rate skills |
-| `@guardian status` | Dashboard: rules, last changes |
-| `@guardian report` | Violations, trends |
-| `@guardian check` | Verify rules & protected paths |
-| `@guardian protect <path>` | Add protected path |
+| `@guardian status` | Dashboard: project, changes, hooks, docs |
+| `@guardian report` | Violations, trends, compliance |
+| `@guardian check` | Verify rules, protected paths, docs freshness |
+| `@guardian protect <path>` | Add protected path to config + constraints |
 | `@guardian snapshot <path>` | Backup file before modifying |
 | `@guardian forget <slug>` | Remove project from guardian |
 | `@guardian docs scan` | Generate docs from templates by stack |
@@ -44,31 +44,44 @@ gentle-ai skill-registry refresh
 | `@guardian docs route <path>` | Show which doc would be served for a path |
 | `@guardian rollback` | Revert last change with confirmation |
 | `@guardian hooks` | Show all hook statuses |
-| `@guardian status` | Dashboard: project, changes, hooks, docs |
-| `@guardian report` | Violations, trends, compliance |
-| `@guardian check` | Verify rules, protected paths, docs freshness |
-| `@guardian protect <path>` | Add protected path to config + constraints |
-| `@guardian snapshot <path>` | Backup file before modifying |
-| `@guardian build|test|...` | Stack helpers |
+| `@guardian build|dev|test|lint|typecheck|deploy|logs` | Stack helpers |
 | `@guardian git branch|commit` | Git helpers |
 
 ## Architecture
 
 ```
-/srv/guardian/                  ← REPO (git-versionable)
-/var/guardian/skills-global.json  ← ONE global skill index
-/var/guardian/projects/<slug>/    ← per-project data
-  ├── config.yaml
-  ├── audit.json
-  └── skills.json
+/srv/guardian/                          ← REPO (git-versionable)
+├── SKILL.md                             ← Guardian skill definition
+├── commands/guardian.md                 ← @guardian command
+├── install.sh                           ← Interactive setup wizard
+├── templates/                           ← 6 doc templates
+└── README.md
+
+/var/guardian/
+├── skills-global.json                   ← Global skill index (306 skills)
+└── projects/<slug>/                     ← Per-project data (NOT in repo)
+    ├── config.yaml                      ← Stack, routes, rules
+    ├── audit.json                       ← Change audit trail (JSON)
+    └── skills.json                      ← Relevant skill references
+
+<project_root>/
+├── AGENTS.md                            ← Symlink to docs/AGENTS.md
+└── docs/
+    ├── AGENTS.md                        ← AI entry point (~25 lines)
+    ├── CONSTRAINTS.md                   ← Project rules (always checked)
+    ├── FRONTEND.md                      ← Components, hooks, state
+    ├── BACKEND.md                       ← API, DB, auth
+    ├── UI.md                            ← Design tokens, patterns
+    └── FEATURES.md                      ← Business logic, flows
 ```
 
 ## Requirements
 
 - OpenCode >= 1.x
-- Engram (MCP)
-- CodeGraph (MCP or binary)
-- OpenSpec/SDD (optional)
+- **Optional (enhance functionality):**
+  - Engram (MCP) — persistent memory
+  - CodeGraph (MCP or binary) — code intelligence
+  - OpenSpec/SDD — spec-driven development
 
 ## License
 
