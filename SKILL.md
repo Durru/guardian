@@ -13,20 +13,18 @@ manages documentation, runs hooks, integrates CodeGraph + OpenSpec/SDD + Engram.
 ## Architecture overview
 
 ```
-/srv/guardian/
+/srv/guardian/                  ← REPO (git-versionable, GitHub)
 ├── SKILL.md                     ← this file
 ├── commands/guardian.md         ← @guardian command
-├── projects/<slug>/             ← per-project data
-│   ├── config.yaml              ← detected stack, rules, paths
-│   ├── audit.log                ← change audit trail
-│   └── skills.json              ← absorbed skill ratings
-├── registry/skills-global.json  ← global skill index
-├── templates/                   ← doc templates
 ├── install.sh                   ← symlink setup
-└── README.md
-```
+├── README.md                    ← for GitHub
+└── .gitignore
 
-Project root: `/srv/guardian/` — git-versionable, shareable on GitHub.
+/var/guardian/projects/<slug>/  ← DATA (per-project, NOT in repo)
+├── config.yaml                  ← detected stack, rules, paths
+├── audit.log                    ← change audit trail
+└── skills.json                  ← absorbed skill ratings
+```
 
 ---
 
@@ -37,7 +35,7 @@ On load (`@guardian` or session start):
 ```
 1. git remote origin → extract repo name → slug
 2. If no git: basename $PWD → slug
-3. If /srv/guardian/projects/<slug>/config.yaml exists:
+3. If /var/guardian/projects/<slug>/config.yaml exists:
    → load config + skills.json
    → report: "Guardian activo para <slug> (stack: <detected>)"
 4. If not found:
@@ -56,7 +54,7 @@ On load (`@guardian` or session start):
    └── If missing → suggest `codegraph init`
 6. Ask: which paths are protected docs? (default: none)
 7. Ask: any project rules? (e.g. "no modificar X sin consultar")
-8. Save /srv/guardian/projects/<slug>/config.yaml
+8. Save /var/guardian/projects/<slug>/config.yaml
 9. Run @guardian docs scan + @guardian absorb
 10. mem_save: "Project <slug> registered in guardian"
 ```
@@ -306,8 +304,8 @@ Scans all installed skills and builds a searchable registry:
    ├── 0-16 → ★
    ├── 17-33 → ★★
    └── 34-50 → ★★★
-6. Save global: /srv/guardian/registry/skills-global.json
-7. Save per-project: /srv/guardian/projects/<slug>/skills.json (filtered by relevance)
+6. Save global: /var/guardian/skills-global.json
+7. Save per-project: /var/guardian/projects/<slug>/skills.json (filtered by relevance)
 ```
 
 ### Skill usage in workflow
@@ -352,8 +350,7 @@ the need and suggest loading it.
 The guardian keeps no in-session state beyond what's in config.yaml
 and skills.json. All cross-session state lives in:
 
-- `/srv/guardian/projects/<slug>/config.yaml` — project config
-- `/srv/guardian/projects/<slug>/audit.log` — change log
-- `/srv/guardian/projects/<slug>/skills.json` — project skill index
-- `/srv/guardian/registry/skills-global.json` — global skill index
+- `/var/guardian/projects/<slug>/config.yaml` — project config
+- `/var/guardian/projects/<slug>/audit.log` — change log
+- `/var/guardian/projects/<slug>/skills.json` — project skill index
 - **Engram** — persistent memory (decisions, summaries)

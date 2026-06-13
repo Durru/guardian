@@ -16,8 +16,7 @@ echo "Guardian dir: $GUARDIAN_DIR"
 # Ensure target directories exist
 mkdir -p "$SKILL_DIR"
 mkdir -p "$CMD_DIR"
-mkdir -p "$GUARDIAN_DIR/projects"
-mkdir -p "$GUARDIAN_DIR/registry"
+mkdir -p /var/guardian/projects
 
 # Create symlinks
 if [ -f "$SKILL_LINK" ] || [ -L "$SKILL_LINK" ]; then
