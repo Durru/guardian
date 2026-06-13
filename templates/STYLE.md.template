@@ -1,0 +1,16 @@
+# Style Guide
+
+## Stack
+- Framework: {{framework}}
+- Language: {{language}}
+- CSS: {{css_approach}}
+
+## Conventions
+- Components: {{component_pattern}}
+- Naming: {{naming_convention}}
+- Imports: {{import_style}}
+
+## Project Structure
+```
+{{project_tree}}
+```

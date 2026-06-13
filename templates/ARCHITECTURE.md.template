@@ -1,0 +1,15 @@
+# Architecture
+
+## Project tree
+```
+{{project_tree}}
+```
+
+## Layers
+{% for layer in layers %}
+### {{layer.name}}
+{{layer.description}}
+{% endfor %}
+
+## Data flow
+{{data_flow}}

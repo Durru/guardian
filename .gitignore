@@ -1,0 +1,7 @@
+# Project-specific data
+/projects/*/config.yaml
+/projects/*/audit.log
+/projects/*/skills.json
+
+# Registry (auto-generated)
+/registry/skills-global.json
