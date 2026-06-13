@@ -164,9 +164,12 @@ Execute on ANY code change. Do not skip.
 │ 5. EXECUTE                                              │
 │    ├── Present to user: "Tipo: X | Archivos: <paths> |  │
 │    │   Scope: <doc> | Impacto: Y. ¿Procedo?"             │
-│    ├── On approval: pre-change hook → snapshot arbol →  │
-│    │   change → post-change hook (diff real) →          │
-│    │   audit.json + mem_save                             │
+│    ├── On approval:                                        │
+│    │   1. pre-change hook (path extraction, scope match,  │
+│    │      snapshot, protected check, delete check, Engram) │
+│    │   2. change                                          │
+│    │   3. post-change hook (diff real, watch verify)      │
+│    │   4. audit.json + mem_save                           │
 │    └── On rejection: wait                                │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -178,11 +181,17 @@ Execute on ANY code change. Do not skip.
 ### Pre-change (before writing code)
 
 ```
-1. Check if affected paths are protected in config.yaml
-2. If protected → STOP + ask user
-3. Check if file exists and is about to be deleted
+1. PATH EXTRACTION: AI declara paths afectados
+   Formato: `files: ["src/components/Button.tsx", "src/styles/button.css"]`
+   Si no declara → guardian pregunta "¿Qué archivos vas a tocar?"
+2. SCOPE MATCH: matchea paths contra config.yaml docs.routes
+   → Sirve docs correspondientes + CONSTRAINTS.md al contexto
+3. SNAPSHOT: codegraph files → guarda baseline pre-cambio en audit.json
+4. PROTECTED CHECK: verifica paths protegidos en config.yaml + CONSTRAINTS.md
+   Si protegido → STOP + ask user
+5. DELETE CHECK: si archivo existe y se va a borrar
    → "¿Estás seguro? Esto elimina X."
-4. Check Engram for relevant past decisions
+6. Engram: buscar decisiones pasadas relevantes
 ```
 
 ### Post-change (after code written)
@@ -281,6 +290,20 @@ AI dice: "voy a cambiar el botón primario"
 → NADA MAS se carga. BACKEND.md, FEATURES.md, etc. quedan fuera.
 ```
 
+### Prioridad de routes (resolución de conflictos)
+
+Cuando múltiples globs matchean un path, gana el **más específico**:
+
+| Prioridad | Patrón | Ejemplo |
+|-----------|--------|---------|
+| 1 (más alta) | Exacto + extensión | `src/components/ui/Button.tsx` |
+| 2 | Directorio profundo | `src/components/ui/**` |
+| 3 | Directorio padre | `src/components/**` |
+| 4 (más baja) | Raíz amplia | `src/**` |
+
+El guardian ordena routes por especificidad (profundidad de path) y usa el primero que matchea.
+Si dos routes tienen misma profundidad, gana el que aparezca primero en config.yaml.
+
 Si el AI cambia de tema (pasa a tocar backend), el guardian
 re-evalúa y sirve el doc correspondiente.
 
@@ -297,9 +320,10 @@ Si el path no matchea ningún doc:
    ├── Buscar template en /srv/guardian/templates/<DOC>.md.template
    └── Llenar template con info del proyecto
 3. Guardar en <project_root>/docs/<docname>.md
-4. AGENTS.md en <project_root>/AGENTS.md
+4. AGENTS.md en <project_root>/docs/AGENTS.md
 5. CONSTRAINTS.md en <project_root>/docs/CONSTRAINTS.md
-6. Update last_scan en config.yaml
+6. Symlink <project_root>/AGENTS.md → <project_root>/docs/AGENTS.md (para compatibilidad OpenCode)
+7. Update last_scan en config.yaml
 ```
 
 ### Narrative docs (@guardian docs write)
@@ -394,3 +418,86 @@ All optional. Guardian works fully without them.
 | `@guardian hooks` | Show hook status |
 | `@guardian build | dev | test | lint | typecheck | deploy | logs` | Stack helpers |
 | `@guardian git branch | commit` | Git helpers |
+
+### Command implementations
+
+#### @guardian status
+```
+1. Load project config.yaml
+2. Read audit.json (last 20 entries)
+3. Display:
+   - Project: <slug> | Stack: <detected>
+   - Active docs: [frontend, ui, ...]
+   - Protected paths: <count>
+   - Last 5 changes from audit.json
+   - Hook status: pre-change ✓ / post-change ✓ / pre-deploy ✓ / post-deploy ✓
+   - Docs last_scan: <date or never>
+```
+
+#### @guardian report
+```
+1. Load audit.json
+2. Analyze:
+   - Total changes: <count>
+   - Violations: <count> (list each)
+   - Most changed files: top 5
+   - Docs update rate: % of changes that updated docs
+   - Rule compliance: % of changes without violations
+3. Display trends over last 30 days
+```
+
+#### @guardian check
+```
+1. Load config.yaml + CONSTRAINTS.md
+2. Verify:
+   - No protected paths modified recently (scan git diff)
+   - No forbidden deps in package.json / Cargo.toml / etc.
+   - Docs not stale (last_scan < 7 days)
+   - All available docs exist in docs/
+   - Skills.json has relevant skills
+3. Report: PASS / FAIL with details
+```
+
+#### @guardian rollback
+```
+1. Read audit.json for last successful change
+2. Show: "Último cambio: <file> - <desc> - <timestamp>"
+3. Ask: "¿Revertir este cambio?"
+4. If yes: git checkout HEAD -- <file> + audit.json entry
+```
+
+#### @guardian protect <path>
+```
+1. Add path to config.yaml docs.routes (if new scope)
+2. Add path to CONSTRAINTS.md Protected section
+3. Update config.yaml
+4. Confirm: "Protected: <path>"
+```
+
+#### @guardian snapshot <path>
+```
+1. cp <path> <path>.guardian-snapshot-<timestamp>
+2. Record in audit.json: type=snapshot, file=<path>
+3. Confirm: "Snapshot created: <path>.guardian-snapshot-<timestamp>"
+```
+
+#### @guardian docs route <path>
+```
+1. Load config.yaml docs.routes
+2. Match <path> against routes with priority
+3. Show:
+   Path: <path>
+   Match: <route> → <doc>
+   Priority: <1-4>
+   Doc served: <doc>.md + CONSTRAINTS.md
+```
+
+#### @guardian hooks
+```
+1. Load config.yaml
+2. Show each hook status:
+   pre-change:  enabled ✓ (checks: protected, delete, engram, snapshot)
+   post-change: enabled ✓ (checks: diff, watch, tests, lint)
+   pre-deploy:  enabled ✓ (checks: build, sdd-verify)
+   post-deploy: enabled ✓ (checks: smoke test, audit, mem_save)
+```

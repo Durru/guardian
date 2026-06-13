@@ -42,7 +42,13 @@ gentle-ai skill-registry refresh
 | `@guardian docs scan` | Generate docs from templates by stack |
 | `@guardian docs write` | Narrative documentation |
 | `@guardian docs route <path>` | Show which doc would be served for a path |
-| `@guardian rollback` | Suggest reverting last change |
+| `@guardian rollback` | Revert last change with confirmation |
+| `@guardian hooks` | Show all hook statuses |
+| `@guardian status` | Dashboard: project, changes, hooks, docs |
+| `@guardian report` | Violations, trends, compliance |
+| `@guardian check` | Verify rules, protected paths, docs freshness |
+| `@guardian protect <path>` | Add protected path to config + constraints |
+| `@guardian snapshot <path>` | Backup file before modifying |
 | `@guardian build|test|...` | Stack helpers |
 | `@guardian git branch|commit` | Git helpers |
 

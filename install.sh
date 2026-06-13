@@ -87,6 +87,33 @@ elif grep -q '"vite"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
 fi
 echo "  Framework: ${FRAMEWORK:-none}"
 
+# Auto-detect routes based on project structure
+echo ""
+echo "Step 4/8: Auto-detecting project structure for docs routes..."
+AVAILABLE_DOCS=""
+
+# Check for frontend
+if [ -d "$PROJECT_ROOT/src/components" ] || [ -d "$PROJECT_ROOT/src/app" ] || [ -d "$PROJECT_ROOT/components" ]; then
+  AVAILABLE_DOCS="${AVAILABLE_DOCS}frontend "
+fi
+
+# Check for backend
+if [ -d "$PROJECT_ROOT/src/api" ] || [ -d "$PROJECT_ROOT/api" ] || [ -d "$PROJECT_ROOT/server" ] || [ -d "$PROJECT_ROOT/src/server" ]; then
+  AVAILABLE_DOCS="${AVAILABLE_DOCS}backend "
+fi
+
+# Check for UI/styles
+if [ -d "$PROJECT_ROOT/src/styles" ] || [ -d "$PROJECT_ROOT/styles" ] || [ -f "$PROJECT_ROOT/tailwind.config.js" ] || [ -f "$PROJECT_ROOT/tailwind.config.ts" ]; then
+  AVAILABLE_DOCS="${AVAILABLE_DOCS}ui "
+fi
+
+# Check for features
+if [ -d "$PROJECT_ROOT/src/features" ] || [ -d "$PROJECT_ROOT/features" ]; then
+  AVAILABLE_DOCS="${AVAILABLE_DOCS}features "
+fi
+
+echo "  Detected available docs: ${AVAILABLE_DOCS:-none}"
+
 # Setup project directory structure
 echo ""
 echo "Step 4/8: Creating project directory structure..."
@@ -97,68 +124,17 @@ echo "  Created docs/ directory"
 echo ""
 echo "Step 5/8: Generating AGENTS.md..."
 
-# Simple template for AGENTS.md
-cat > "$PROJECT_ROOT/AGENTS.md" <<EOF
-# $SLUG
-
-## Stack
-- runtime: $STACK_DETECTED
-- framework: ${FRAMEWORK:-none}
-- test: npm test
-- lint: npm run lint
-- build: npm run build
-
-## Entry
-Entry points will be scanned and populated later.
-
-## Docs
-- AGENTS.md (this file)
-- CONSTRAINTS.md (project rules)
-- FRONTEND.md (if applicable)
-- BACKEND.md (if applicable)
-- UI.md (if applicable)
-- FEATURES.md (if applicable)
-EOF
-
-echo "  AGENTS.md written to project root"
-
-# Create placeholder CONSTRAINTS.md in docs directory
-cat > "$PROJECT_ROOT/docs/CONSTRAINTS.md" <<EOF
-## Scope
-- .env files (environment variables)
-- database configuration
-- API keys and secrets
-
-## Protected
-- Production environment files
-- Database credentials
-- API keys and secrets
-
-## Forbidden
-- Modifying .env files
-- Committing secrets to git
-- Exposing credentials
-
-## Tech Debt
-- TODO: Add project-specific rules
-
-EOF
-
-echo "  CONSTRAINTS.md created"
-
-# Create AGENTS.md from template
+# Create AGENTS.md in docs/ from template
 AGENTS_TEMPLATE="$GUARDIAN_DIR/templates/AGENTS.md.template"
 if [ -f "$AGENTS_TEMPLATE" ]; then
-  # Replace template variables
+  # Build doc list
   DOC_LIST=""
   for tmpl in "$GUARDIAN_DIR/templates/"*.md.template; do
     if [ "$tmpl" != "$AGENTS_TEMPLATE" ]; then
       docname="$(basename "$tmpl" .md.template)"
-      DOC_LIST="$DOC_LIST- $docname\n$DOC_LIST"
+      DOC_LIST="${DOC_LIST}- ${docname}\n"
     fi
-done
-  # Remove leading newline
-  DOC_LIST="${DOC_LIST#*$'\n'}"
+  done
   
   envsubst "
     slug: $SLUG
@@ -169,15 +145,89 @@ done
     build_cmd: npm run build
     entry_points: $ENTRY_POINTS
     docs_list: $DOC_LIST
-  " "$AGENTS_TEMPLATE" > "$PROJECT_ROOT/AGENTS.md"
-  echo "  AGENTS.md populated from template"
+  " "$AGENTS_TEMPLATE" > "$PROJECT_ROOT/docs/AGENTS.md"
+  echo "  AGENTS.md written to docs/"
+  
+  # Create symlink for OpenCode compatibility
+  ln -sf "docs/AGENTS.md" "$PROJECT_ROOT/AGENTS.md"
+  echo "  Symlink AGENTS.md created"
 else
   echo "  WARN: AGENTS.md.template not found"
 fi
 
+# Auto-generate CONSTRAINTS.md with real detection
+echo ""
+echo "Step 6/8: Auto-generating CONSTRAINTS.md..."
+
+# Detect protected paths
+PROTECTED_PATHS=""
+if [ -f "$PROJECT_ROOT/.env" ]; then
+  PROTECTED_PATHS="${PROTECTED_PATHS}- .env\n"
+fi
+if [ -f "$PROJECT_ROOT/.env.local" ]; then
+  PROTECTED_PATHS="${PROTECTED_PATHS}- .env.local\n"
+fi
+if [ -f "$PROJECT_ROOT/.env.production" ]; then
+  PROTECTED_PATHS="${PROTECTED_PATHS}- .env.production\n"
+fi
+if [ -f "$PROJECT_ROOT/prisma/schema.prisma" ]; then
+  PROTECTED_PATHS="${PROTECTED_PATHS}- prisma/schema.prisma\n"
+fi
+if [ -f "$PROJECT_ROOT/.env.example" ]; then
+  PROTECTED_PATHS="${PROTECTED_PATHS}- .env.example\n"
+fi
+
+# Detect forbidden patterns
+FORBIDDEN_DEPS=""
+if [ -f "$PROJECT_ROOT/package.json" ]; then
+  # Check for deprecated packages
+  if grep -q '"moment"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
+    FORBIDDEN_DEPS="${FORBIDDEN_DEPS}- moment (use date-fns or native Date)\n"
+  fi
+  if grep -q '"lodash"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
+    FORBIDDEN_DEPS="${FORBIDDEN_DEPS}- lodash (use native methods or es-toolkit)\n"
+  fi
+fi
+
+# Detect tech debt
+TECH_DEBT=""
+if [ -f "$PROJECT_ROOT/package.json" ]; then
+  if ! grep -q '"typescript"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
+    TECH_DEBT="${TECH_DEBT}- No TypeScript configured\n"
+  fi
+  if ! grep -q '"eslint"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
+    TECH_DEBT="${TECH_DEBT}- No ESLint configured\n"
+  fi
+fi
+
+cat > "$PROJECT_ROOT/docs/CONSTRAINTS.md" <<EOF
+## Scope
+{{scope_paths}}
+
+## Protected
+${PROTECTED_PATHS:-  (no protected paths detected)}
+
+## Forbidden
+${FORBIDDEN_DEPS:-  (no forbidden dependencies detected)}
+
+## Tech Debt
+${TECH_DEBT:-  (no tech debt detected)}
+
+---
+*Generated by Nexxoria Guardian. Run \`@guardian docs scan\` to regenerate.*
+EOF
+
+echo "  CONSTRAINTS.md created with real detection"
+
 # Initialize config.yaml in projects/<slug> directory
 PROJS_DIR="/var/guardian/projects/$SLUG"
 mkdir -p "$PROJS_DIR"
+
+# Build available docs flags
+FRONTEND_AVAILABLE=$(echo "$AVAILABLE_DOCS" | grep -q "frontend" && echo "true" || echo "false")
+BACKEND_AVAILABLE=$(echo "$AVAILABLE_DOCS" | grep -q "backend" && echo "true" || echo "false")
+UI_AVAILABLE=$(echo "$AVAILABLE_DOCS" | grep -q "ui" && echo "true" || echo "false")
+FEATURES_AVAILABLE=$(echo "$AVAILABLE_DOCS" | grep -q "features" && echo "true" || echo "false")
 
 cat > "$PROJS_DIR/config.yaml" <<EOF
 project_root: $PROJECT_ROOT
@@ -204,10 +254,10 @@ docs:
     "tailwind.config.*": ui
     "src/features/**": features
   available:
-    frontend: true
-    backend: true
-    ui: true
-    features: true
+    frontend: $FRONTEND_AVAILABLE
+    backend: $BACKEND_AVAILABLE
+    ui: $UI_AVAILABLE
+    features: $FEATURES_AVAILABLE
   last_scan: ~
 openspec:
   enabled: true
@@ -220,6 +270,15 @@ audit: true
 EOF
 
 echo "  config.yaml written to $PROJS_DIR/config.yaml"
+
+# Initialize skills.json in project directory
+cat > "$PROJS_DIR/skills.json" <<EOF
+{
+  "relevant": [],
+  "last_absorb": null
+}
+EOF
+echo "  skills.json created"
 
 echo "  Project registered: $SLUG"
 echo "  Project root: $PROJECT_ROOT"
