@@ -1,0 +1,14 @@
+# {{slug}}
+
+## Stack
+- runtime: {{runtime}}
+- framework: {{framework}}
+- test: {{test_cmd}}
+- lint: {{lint_cmd}}
+- build: {{build_cmd}}
+
+## Entry
+{{entry_points}}
+
+## Docs
+{{docs_list}}

@@ -103,7 +103,22 @@ stack:
   deploy: pm2 restart myapp
   logs: pm2 logs myapp --lines 20
 docs:
-  protected: []
+  mandatory: [agents, constraints]
+  routes:
+    "src/components/**": frontend
+    "src/hooks/**": frontend
+    "src/store/**": frontend
+    "src/api/**": backend
+    "src/db/**": backend
+    "src/middleware/**": backend
+    "src/styles/**": ui
+    "tailwind.config.*": ui
+    "src/features/**": features
+  available:
+    frontend: true
+    backend: true
+    ui: true
+    features: true
   last_scan: ~
 openspec:
   enabled: true
@@ -128,11 +143,15 @@ Execute on ANY code change. Do not skip.
 │              bugfix / refactor / feature                 │
 ├─────────────────────────────────────────────────────────┤
 │ 2. CONSULT                                              │
-│    ├── Read project docs if they exist                  │
-│    ├── OpenSpec: search /root/p/openspec/specs/         │
-│    │   └── If feature + no spec → suggest SDD           │
-│    ├── Engram: mem_search for past decisions             │
-│    └── config.yaml rules — check restrictions           │
+│    ├── Scope match: extraer paths del cambio y           │
+│    │   matchear contra config.yaml docs.routes           │
+│    │   ├── Match exacto → servir ese doc solo            │
+│    │   ├── Sin match → AGENTS.md (básico)                │
+│    │   └── CONSTRAINTS.md se sirve SIEMPRE               │
+│    ├── OpenSpec: search /root/p/openspec/specs/          │
+│    │   └── If feature + no spec → suggest SDD            │
+│    ├── Engram: mem_search for past decisions              │
+│    └── config.yaml rules — check restrictions            │
 ├─────────────────────────────────────────────────────────┤
 │ 3. ANALYZE                                              │
 │    ├── CodeGraph context/impact/callers/callees         │
@@ -143,10 +162,12 @@ Execute on ANY code change. Do not skip.
 │    └── ¿Hay spec que seguir?                            │
 ├─────────────────────────────────────────────────────────┤
 │ 5. EXECUTE                                              │
-│    ├── Present to user: "Tipo: X. Impacto: Y. ¿Procedo?"│
-│    ├── On approval: pre-change hook → change →          │
-│    │   post-change hook → audit.json + mem_save         │
-│    └── On rejection: wait                               │
+│    ├── Present to user: "Tipo: X | Archivos: <paths> |  │
+│    │   Scope: <doc> | Impacto: Y. ¿Procedo?"             │
+│    ├── On approval: pre-change hook → snapshot arbol →  │
+│    │   change → post-change hook (diff real) →          │
+│    │   audit.json + mem_save                             │
+│    └── On rejection: wait                                │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -167,12 +188,19 @@ Execute on ANY code change. Do not skip.
 ### Post-change (after code written)
 
 ```
-1. Run tests (config.stack.test) if configured
-2. Run linter (config.stack.lint) if configured
-3. Detect new/deleted components or routes
-4. If structural change:
-   → "Nuevo componente. ¿Actualizo docs?"
-5. Write to audit.json + mem_save
+1. codegraph files → árbol POST-cambio
+2. DIFF real: comparar contra snapshot pre-cambio
+3. Para cada archivo nuevo:
+   ├── Matchear contra config.yaml docs.routes
+   ├── Si matchea un doc existente → verificar si ya está documentado
+   └── Si NO está → "Nuevo archivo en scope <doc>. ¿Actualizo?"
+4. Verificar Watch section del doc servido en pre-change
+   ├── Ej: UI.md dice "watch: color hardcodeado → WARN"
+   └── Si el cambio LO VIOLA → alertar
+5. Run tests (config.stack.test) if configured
+6. Run linter (config.stack.lint) if configured
+7. Write to audit.json + mem_save
+8. Snapshot post-cambio = nuevo baseline para próximo diff
 ```
 
 ### Pre-deploy (before deploy)
@@ -207,35 +235,78 @@ Guarda en `/var/guardian/projects/<slug>/audit.json`.
 
 ---
 
-## 5. Documentation (unified)
+## 5. Documentation — scope router
 
-### Auto-generation from code (automatic + @guardian docs scan)
+No es una jerarquía de archivos. Es un router de contexto just-in-time.
+
+### AGENTS.md (entry point, se lee SIEMPRE al arrancar)
+
+~25 líneas. Stack + entry points + qué docs existen en el proyecto.
+Es el ÚNICO doc que carga al contexto automáticamente.
+
+### CONSTRAINTS.md (se checkea SIEMPRE en pre-change)
+
+Reglas duras del proyecto: paths protegidos, dependencias prohibidas,
+deuda técnica, no-gos. No es opcional — se verifica en CADA cambio.
+
+### Docs por dominio (se sirven bajo demanda según el scope)
+
+| Doc | Contenido | Se sirve cuando toca |
+|-----|-----------|---------------------|
+| FRONTEND.md | Componentes, hooks, estado, routing, llamadas API | src/components, src/hooks, src/store |
+| BACKEND.md | API routes, DB, auth, middleware, lógica de negocio | src/api, src/db, src/middleware |
+| UI.md | Tokens, colores, spacing, animaciones, layout | src/styles, tailwind.config, *.css |
+| FEATURES.md | Reglas de negocio, flujos, side effects | src/features o feature nuevo |
+
+### Cada doc tiene 4 secciones obligatorias
+
+```markdown
+## Scope       ← qué paths cubre (para matcheo automático)
+## Patterns    ← cómo se hacen las cosas
+## Constraints ← qué NO hacer
+## Watch       ← qué detectar automáticamente + cómo alertar
+```
+
+Nada de paja. Directo al punto.
+
+### Scope routing (cómo se sirve contexto just-in-time)
 
 ```
-1. codegraph files → project tree
-2. Scan component files (JSX/TSX patterns)
-3. Scan API routes
-4. Generate/update:
-   ├── STYLE.md, COMPONENTS.md, API_SPEC.md, ARCHITECTURE.md
-   └── AGENTS.md (via agents-md-generator)
-5. Save to project root
-6. Update last_scan in config.yaml
+AI dice: "voy a cambiar el botón primario"
+→ guardian extrae paths: src/components/ui/Button.tsx, src/styles/tokens.css
+→ matchea contra config.yaml docs.routes:
+    src/components/** → frontend
+    src/styles/** → ui
+→ Sirve al contexto: FRONTEND.md + UI.md + CONSTRAINTS.md
+→ NADA MAS se carga. BACKEND.md, FEATURES.md, etc. quedan fuera.
+```
+
+Si el AI cambia de tema (pasa a tocar backend), el guardian
+re-evalúa y sirve el doc correspondiente.
+
+### Sin match en routes
+
+Si el path no matchea ningún doc:
+→ Sirve AGENTS.md (información básica del proyecto) + CONSTRAINTS.md
+
+### Auto-generación (@guardian docs scan)
+
+```
+1. Leer config.yaml docs.routes → qué docs están habilitados
+2. Para cada doc habilitado:
+   ├── Buscar template en /srv/guardian/templates/<DOC>.md.template
+   └── Llenar template con info del proyecto
+3. Guardar en <project_root>/docs/<docname>.md
+4. AGENTS.md en <project_root>/AGENTS.md
+5. CONSTRAINTS.md en <project_root>/docs/CONSTRAINTS.md
+6. Update last_scan en config.yaml
 ```
 
 ### Narrative docs (@guardian docs write)
 
 ```
 1. Ask what kind: tutorial / how-to / explanation / reference
-2. Invoke documentation-writer with project context
-```
-
-### Sync (automatic in post-change)
-
-```
-- New component + COMPONENTS.md exists
-  → "¿Actualizo COMPONENTS.md?"
-- Docs stale > 7 days
-  → "¿Corro @guardian docs scan?"
+2. Invoke documentation-writer with project context + docs ya existentes
 ```
 
 ---
@@ -318,6 +389,7 @@ All optional. Guardian works fully without them.
 | `@guardian forget <slug>` | Remove project from guardian |
 | `@guardian docs scan` | Auto-generate docs from code |
 | `@guardian docs write` | Narrative documentation |
+| `@guardian docs route <path>` | Show which doc would be served for a path |
 | `@guardian rollback` | Suggest reverting last change |
 | `@guardian hooks` | Show hook status |
 | `@guardian build | dev | test | lint | typecheck | deploy | logs` | Stack helpers |

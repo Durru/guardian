@@ -16,8 +16,9 @@ Usá estos solo cuando quieras control manual:
 | `@guardian protect <path>` | Agregar path protegido |
 | `@guardian snapshot <path>` | Backup de archivo antes de modificar |
 | `@guardian forget <slug>` | Eliminar proyecto del guardian |
-| `@guardian docs scan` | Auto-generar docs desde el código |
+| `@guardian docs scan` | Generar docs desde templates según stack |
 | `@guardian docs write` | Documentación narrativa |
+| `@guardian docs route <path>` | Mostrar qué doc se serviría para un path |
 | `@guardian rollback` | Sugerir revertir último cambio |
 | `@guardian hooks` | Estado de hooks |
 | `@guardian build|dev|test|lint|typecheck|deploy|logs` | Stack helpers |

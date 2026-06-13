@@ -1,0 +1,12 @@
+## Scope
+{{scope_paths}}
+
+## Protected
+{{protected_paths}}
+
+## Forbidden
+{{forbidden_deps}}
+{{forbidden_patterns}}
+
+## Tech Debt
+{{tech_debt_items}}

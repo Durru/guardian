@@ -7,9 +7,11 @@ Universal project guardian for OpenCode AI coding sessions. Auto-detects project
 - **Flow mode** — operates automatically, no commands needed day-to-day
 - **Auto-detection** — project by git remote or PWD
 - **Persistent config** — per-project at `/var/guardian/projects/<slug>/`
-- **5-step change workflow** — identify → consult → analyze → evaluate → execute
-- **Hooks** — pre/post change, pre/post deploy (automatic)
-- **Documentation** — auto-generates from code + narrative docs
+- **5-step change workflow** — identify → consult (scope router) → analyze → evaluate → execute
+- **Hooks** — pre/post change (with real diff), pre/post deploy
+- **Documentation** — scope router: sirve solo el doc relevante según qué archivo se toca
+- **Just-in-time context** — AGENTS.md (~25 líneas) al arrancar, docs por dominio bajo demanda
+- **Post-change diff** — detecta archivos nuevos y verifica restricciones automáticamente
 - **Stack helpers** — build, dev, test, lint, deploy, logs
 - **Skill registry** — absorbs & rates installed skills (global + per-project)
 - **Audit** — JSON audit log with violations, change history, trends
@@ -37,8 +39,9 @@ gentle-ai skill-registry refresh
 | `@guardian protect <path>` | Add protected path |
 | `@guardian snapshot <path>` | Backup file before modifying |
 | `@guardian forget <slug>` | Remove project from guardian |
-| `@guardian docs scan` | Auto-generate docs from code |
+| `@guardian docs scan` | Generate docs from templates by stack |
 | `@guardian docs write` | Narrative documentation |
+| `@guardian docs route <path>` | Show which doc would be served for a path |
 | `@guardian rollback` | Suggest reverting last change |
 | `@guardian build|test|...` | Stack helpers |
 | `@guardian git branch|commit` | Git helpers |

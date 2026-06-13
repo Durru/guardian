@@ -24,6 +24,13 @@ if [ ! -f /var/guardian/skills-global.json ]; then
   echo "  skills-global.json created"
 fi
 
+# Verify templates exist
+TEMPLATE_COUNT=$(ls "$GUARDIAN_DIR/templates/"*.md.template 2>/dev/null | wc -l)
+if [ "$TEMPLATE_COUNT" -lt 6 ]; then
+  echo "  WARN: Expected 6 templates, found $TEMPLATE_COUNT"
+  echo "  Re-run git pull or re-clone"
+fi
+
 # Create symlinks
 if [ -f "$SKILL_LINK" ] || [ -L "$SKILL_LINK" ]; then
   rm "$SKILL_LINK"
