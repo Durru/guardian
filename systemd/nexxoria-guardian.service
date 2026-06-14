@@ -5,6 +5,7 @@ After=network.target
 
 [Service]
 Type=simple
+Environment=PYTHONPATH=/opt/nexxoria-guardian/lib
 ExecStart=/usr/bin/python3 /opt/nexxoria-guardian/lib/guardian_backend.py serve
 Restart=on-failure
 RestartSec=5

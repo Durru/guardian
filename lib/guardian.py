@@ -2657,7 +2657,7 @@ def cmd_stack(action, slug):
 # ── main ────────────────────────────────────────────────────────
 
 def main():
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h"):
         print("🛡️  Nexxoria Guardian")
         print()
         print("Uso: guardian <comando> [args...]")

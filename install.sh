@@ -129,6 +129,17 @@ sudo mkdir -p "$GUARDIAN_DATA/genome/branches/default/knowledge/tomes"
 sudo mkdir -p "$GUARDIAN_DATA/genome/branches/default/learnings"
 ok "Directorios creados en $GUARDIAN_HOME y $GUARDIAN_DATA"
 
+# Crear .env para backend (si no existe)
+if [ ! -f "$HOME/.guardian/.env" ]; then
+    mkdir -p "$HOME/.guardian"
+    cat > "$HOME/.guardian/.env" << EOF
+GUARDIAN_HOME=$GUARDIAN_HOME
+GUARDIAN_DATA=$GUARDIAN_DATA
+GUARDIAN_PORT=9787
+EOF
+    ok "Archivo .env creado en $HOME/.guardian/.env"
+fi
+
 # ── 4. Copiar código ────────────────────────────────────────────
 info "Copiando archivos..."
 sudo cp -r "$SCRIPT_DIR/lib"    "$GUARDIAN_HOME/lib"
@@ -140,6 +151,7 @@ sudo cp -r "$SCRIPT_DIR/tests"  "$GUARDIAN_HOME/tests"
 sudo cp  "$SCRIPT_DIR/SKILL.md" "$GUARDIAN_HOME/SKILL.md"
 sudo cp  "$SCRIPT_DIR/LICENSE"  "$GUARDIAN_HOME/LICENSE" 2>/dev/null || true
 sudo cp  "$SCRIPT_DIR/README.md" "$GUARDIAN_HOME/README.md" 2>/dev/null || true
+sudo mkdir -p "$GUARDIAN_HOME/commands"
 sudo cp  "$SCRIPT_DIR/commands/guardian.md" "$GUARDIAN_HOME/commands/guardian.md" 2>/dev/null || true
 # systemd
 if [ -d "$SCRIPT_DIR/systemd" ]; then
@@ -199,16 +211,26 @@ if ! $NO_OPENCODE; then
 
     # ── 9. Registrar MCP server ────────────────────────────────
     info "Registrando MCP server..."
-    if command -v opencode &>/dev/null; then
-        # Eliminar si ya existe
-        opencode mcp remove nexxoria-guardian 2>/dev/null || true
-        opencode mcp add nexxoria-guardian \
-            --description "Nexxoria Guardian MCP tools" \
-            --command "$PYTHON" \
-            --args "$GUARDIAN_HOME/lib/guardian_mcp.py" \
-            --transport stdio 2>/dev/null || \
-            warn "No se pudo registrar MCP automáticamente. Hacelo manual: opencode mcp add ..."
-        ok "MCP server registrado"
+    OC_CONFIG="$HOME_DIR/.config/opencode/opencode.json"
+    if [ -f "$OC_CONFIG" ]; then
+        $PYTHON -c "
+import json
+path = '$OC_CONFIG'
+with open(path) as f:
+    cfg = json.load(f)
+mcp = cfg.setdefault('mcp', {})
+mcp['nexxoria-guardian'] = {
+    'command': ['$PYTHON', '$GUARDIAN_HOME/lib/guardian_mcp.py'],
+    'type': 'local',
+}
+with open(path, 'w') as f:
+    json.dump(cfg, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+print('ok')
+" 2>/dev/null && ok "MCP server registrado en $OC_CONFIG" || \
+        warn "No se pudo registrar MCP automáticamente. Agregalo manualmente en $OC_CONFIG"
+    else
+        warn "OpenCode config no encontrado en $OC_CONFIG. Agregalo manualmente."
     fi
 else
     info "Saltando configuración de OpenCode (modo --no-opencode)"
