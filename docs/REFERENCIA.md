@@ -22,6 +22,12 @@
 | `guardian rollback [slug]` | Revertir último cambio |
 | `guardian hooks [slug]` | Estado de hooks |
 
+### Permisos
+
+| Comando | Descripción |
+|---------|-------------|
+| `guardian permission check <path> [slug]` | Quick check de permiso para editar/ejecutar |
+
 ### Workflow AI
 
 | Comando | Descripción |
@@ -122,6 +128,7 @@
 | `/absorb/scan` | `{"slug": ""}` | Resultado del scan |
 | `/absorb/classify` | `{"slug": ""}` | Resultado de clasificación |
 | `/docs/scan` | `{"slug": ""}` | Resultado del scan + auto RAG index |
+| `/permission/check` | `{"slug": "", "path": "", "operation": "edit\|bash"}` | `{"slug", "path", "operation", "mode", "confidence", "action", "allowed"}` |
 | `/mcp/call` | `{"slug": "", "tool": "", "args": {}}` | `{"ok": true}` |
 
 ---
@@ -224,3 +231,45 @@ tests/
 ```
 
 **Total: 119 tests (2 fallos pre-existentes de aislamiento al ejecutar suite completa)**
+
+---
+
+## Plugin OpenCode (guardian.ts)
+
+El plugin `.opencode/plugins/guardian.ts` integra Guardian con OpenCode como agente.
+
+### Instalación
+
+```bash
+guardian setup <slug>          # Crea project config
+guardian backend start          # Inicia backend persistente
+```
+
+El plugin se auto-descubre desde `.opencode/plugins/`.
+
+### Herramientas expuestas
+
+| Tool | Descripción |
+|------|-------------|
+| `guardian_status` | Estado del proyecto, modo, backend health |
+| `guardian_conciencia` | Ejecutar ciclo de conciencia |
+| `guardian_rag` | Consultar RAG |
+| `guardian_mode` | Cambiar modo plan/build |
+| `guardian_check_permission` | Verificar si una operación está permitida |
+| `guardian_why_blocked` | Explicar por qué un archivo está bloqueado |
+
+### Hooks
+
+- **`session.created`**: Inyecta contexto del proyecto al inicio
+- **`permission.ask`**: Intercepta writes/bash en módulos protegidos, consulta backend con cache LRU (5min TTL, max 200 entries)
+- **`tui.prompt.append`**: Detecta keywords para auto-cambiar modo plan/build
+- **`experimental.session.compacting`**: Re-inyecta contexto antes de compactación
+
+### Niveles de guardia en módulos
+
+| Nivel | Descripción |
+|-------|-------------|
+| `blocked` | Denegado siempre |
+| `readonly` | Lectura permitida, escritura denegada |
+| `conciencia` | Evalúa con backend `quick_check()` |
+| `allowed` | Permitido siempre |

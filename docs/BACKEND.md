@@ -5,6 +5,7 @@ python / — / PostgreSQL
 
 ### API Routes
 - REST: `GET /api/resource`, `POST /api/resource`, etc.
+- `POST /permission/check`: recibe `{slug, path, operation}`, devuelve `{confidence, action, allowed}` usando quick_check() sin LLM
 - Validate input with —
 - Return consistent error format: `{ error: { code, message, details } }`
 - Use proper HTTP status codes
