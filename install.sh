@@ -54,7 +54,9 @@ PYTHON=""
 for candidate in python3.12 python3.11 python3.10 python3.9 python3; do
     if command -v "$candidate" &>/dev/null; then
         ver=$("$candidate" --version 2>&1 | grep -oP '\d+\.\d+')
-        if awk "BEGIN {exit !($ver >= 3.9)}" 2>/dev/null; then
+        major="${ver%%.*}"
+        minor="${ver#*.}"
+        if [ "$major" -gt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -ge 9 ]; } 2>/dev/null; then
             PYTHON="$candidate"
             break
         fi
