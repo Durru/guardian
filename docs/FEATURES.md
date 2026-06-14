@@ -1,5 +1,5 @@
 ## Stack
-{{framework}}
+—
 
 ## Patterns
 

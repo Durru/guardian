@@ -1,88 +1,88 @@
 # Nexxoria Guardian
 
-Universal project guardian for OpenCode AI coding sessions. Auto-detects projects, prevents LLMs from breaking things, manages documentation, runs hooks, and integrates with CodeGraph, OpenSpec/SDD, and Engram.
+**Universal project guardian for OpenCode AI sessions.**
 
-## Features
+Guardian es un ser orgánico que protege, guía y evoluciona tus proyectos.  
+Tiene conciencia (2 niveles), genoma, ramas de evolución, RAG unificado, backend persistente y MCP.
 
-- **Flow mode** — operates automatically, no commands needed day-to-day
-- **Auto-detection** — project by git remote or PWD
-- **Persistent config** — per-project at `/var/guardian/projects/<slug>/`
-- **5-step change workflow** — identify → consult (scope router) → analyze → evaluate → execute
-- **Hooks** — pre/post change (with real diff), pre/post deploy
-- **Documentation** — scope router: sirve solo el doc relevante según qué archivo se toca
-- **Just-in-time context** — AGENTS.md (~25 líneas) al arrancar, docs por dominio bajo demanda
-- **Post-change diff** — detecta archivos nuevos y verifica restricciones automáticamente
-- **Stack helpers** — build, dev, test, lint, deploy, logs
-- **Skill registry** — absorbs & rates installed skills (global + per-project)
-- **Audit** — JSON audit log with violations, change history, trends
+---
 
-## Installation
+## Requisitos
+
+- **OS:** Ubuntu 22.04+ (o Debian-based)
+- **Python:** 3.9+
+- **OpenCode:** `>= 1.17` ([instalar](https://opencode.ai))
+
+## Instalación
 
 ```bash
-git clone https://github.com/Durru/guardian /srv/guardian
-cd /srv/guardian
-chmod +x install.sh
-./install.sh
-gentle-ai skill-registry refresh
+git clone https://github.com/nexxoria/guardian.git
+cd guardian
+sudo bash install.sh
 ```
 
-## Commands (optional — guardian works without them)
+O en una línea:
 
-| Command | What it does |
-|---------|-------------|
-| `@guardian` | Load + detect project |
-| `@guardian setup` | Re-run setup wizard |
-| `@guardian absorb` | Re-scan + rate skills |
-| `@guardian status` | Dashboard: project, changes, hooks, docs |
-| `@guardian report` | Violations, trends, compliance |
-| `@guardian check` | Verify rules, protected paths, docs freshness |
-| `@guardian protect <path>` | Add protected path to config + constraints |
-| `@guardian snapshot <path>` | Backup file before modifying |
-| `@guardian forget <slug>` | Remove project from guardian |
-| `@guardian docs scan` | Generate docs from templates by stack |
-| `@guardian docs write` | Narrative documentation |
-| `@guardian docs route <path>` | Show which doc would be served for a path |
-| `@guardian rollback` | Revert last change with confirmation |
-| `@guardian hooks` | Show all hook statuses |
-| `@guardian build|dev|test|lint|typecheck|deploy|logs` | Stack helpers |
-| `@guardian git branch|commit` | Git helpers |
-
-## Architecture
-
-```
-/srv/guardian/                          ← REPO (git-versionable)
-├── SKILL.md                             ← Guardian skill definition
-├── commands/guardian.md                 ← @guardian command
-├── install.sh                           ← Interactive setup wizard
-├── templates/                           ← 6 doc templates
-└── README.md
-
-/var/guardian/
-├── skills-global.json                   ← Global skill index (306 skills)
-└── projects/<slug>/                     ← Per-project data (NOT in repo)
-    ├── config.yaml                      ← Stack, routes, rules
-    ├── audit.json                       ← Change audit trail (JSON)
-    └── skills.json                      ← Relevant skill references
-
-<project_root>/
-├── AGENTS.md                            ← Symlink to docs/AGENTS.md
-└── docs/
-    ├── AGENTS.md                        ← AI entry point (~25 lines)
-    ├── CONSTRAINTS.md                   ← Project rules (always checked)
-    ├── FRONTEND.md                      ← Components, hooks, state
-    ├── BACKEND.md                       ← API, DB, auth
-    ├── UI.md                            ← Design tokens, patterns
-    └── FEATURES.md                      ← Business logic, flows
+```bash
+curl -fsSL https://raw.githubusercontent.com/nexxoria/guardian/main/install.sh | sudo bash
 ```
 
-## Requirements
+### Qué hace `install.sh`
 
-- OpenCode >= 1.x
-- **Optional (enhance functionality):**
-  - Engram (MCP) — persistent memory
-  - CodeGraph (MCP or binary) — code intelligence
-  - OpenSpec/SDD — spec-driven development
+1. Detecta Ubuntu + Python 3.9+ + OpenCode
+2. Instala en `/opt/nexxoria-guardian/`
+3. Crea datos runtime en `/var/lib/nexxoria-guardian/`
+4. Instala dependencia PyYAML
+5. Crea symlink `/usr/local/bin/guardian`
+6. Registra servicio systemd (auto-start en boot)
+7. Instala skill en `~/.agents/skills/nexxoria-guardian/`
+8. Instala comando `@guardian` en OpenCode
+9. Registra MCP server
+10. Verifica instalación
 
-## License
+**Después de instalar, reiniciá OpenCode y decí "activo guardian".**
+
+## Uso básico
+
+```bash
+# Ver ayuda
+guardian --help
+
+# Estado del backend
+guardian backend status
+
+# Activar Guardian en un proyecto
+cd /ruta/de/mi/proyecto
+guardian activate
+
+# O desde OpenCode
+# @guardian context --brief
+```
+
+## Arquitectura
+
+```
+  CEREBRO: LLM + Conciencia N1/N2 + RAG
+  OJOS:    Contexto + Skills como tomos
+  MANOS:   CLI + Hooks + Git
+  PIERNAS: Backend :9787 + Scheduler + MCP
+  NANOS:   MCP Tools
+```
+
+Documentación completa en [docs/](docs/):
+- [CONCEPTOS.md](docs/CONCEPTOS.md) — Filosofía, ser orgánico, conciencia
+- [FLUJOS.md](docs/FLUJOS.md) — Workflows detallados
+- [REFERENCIA.md](docs/REFERENCIA.md) — CLI, API, MCP
+- [GUIA.md](docs/GUIA.md) — Inicio rápido
+- [INSTALACION.md](docs/INSTALACION.md) — Instalación detallada
+
+## Stack
+
+- **Runtime:** Python 3.9+ (stdlib, sin dependencias externas)
+- **Opcional:** PyYAML (para archivos YAML)
+- **Datos:** JSON + YAML
+- **Sin Docker, sin ORM, sin Node.js**
+
+## Licencia
 
 MIT

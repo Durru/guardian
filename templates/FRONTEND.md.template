@@ -1,8 +1,7 @@
-## Scope
-{{frontend_scope}}
+## Stack
+{{runtime}} / {{framework}}
 
 ## Patterns
-{{frontend_patterns}}
 
 ### Component Structure
 - Use functional components with TypeScript
@@ -26,7 +25,6 @@
 - Error boundaries for graceful failures
 
 ## Constraints
-{{frontend_constraints}}
 
 ### DO NOT
 - Import server-only code in client components
@@ -35,7 +33,6 @@
 - Mutate props - treat as read-only
 
 ## Watch
-{{frontend_watch}}
 
 ### Auto-alerts
 - New component without tests → suggest adding

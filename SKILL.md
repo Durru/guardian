@@ -1,503 +1,164 @@
-# Nexxoria Guardian
+---
+name: nexxoria-guardian
+description: Universal project guardian for OpenCode AI sessions — v2 orgánico. Auto-detects projects, genome, conciencia (2 niveles), plan/build modes, skills como tomos de conocimiento, RAG unificado, backend persistente, y MCP.
+license: MIT
+compatibility: opencode
+metadata:
+  audience: developers
+  workflow: coding
+---
 
-Universal project guardian for OpenCode AI sessions. Auto-detects projects,
-prevents LLMs from breaking things, manages docs, runs hooks, integrates
-CodeGraph + OpenSpec/SDD + Engram.
+# Nexxoria Guardian v2 — Ser Orgánico
+
+Guardian v2 es un ser orgánico: cerebro (LLM + conciencia + meta-conciencia + RAG), ojos (contexto), manos (CLI + hooks + git), piernas (backend :9787 + scheduler) y nanos (MCP tools).
 
 ## Triggers
 
-- Starting work in a project
-- User asks for a code change
-- User mentions "guardian", "proyecto", "project"
-- User runs `@guardian` or any `@guardian <subcommand>`
-- Before deploy, after change, on structural refactors
+- Iniciar sesión en un proyecto
+- Usuario pide un cambio de código
+- Usuario menciona `guardian`, `proyecto`, `project`
+- Usuario ejecuta `@guardian <subcomando>`
+- Antes/después de cambios o deploys
+- Arranque del backend persistente
 
----
+## Regla 0: Contexto primero
 
-## Rule #1: Flow mode (automatic)
+Antes de cualquier acción, cargar contexto del proyecto.
 
-**No need to memorize commands.** The guardian operates in flow mode:
+- Inicio de sesión: `guardian context --brief`
+- Antes de cambios: `guardian context --scope <path>`
+- Si hay duda: `guardian context --check`
+- Si no hay cambios nuevos: no re-inyectar contexto
 
-| Cuándo | Qué hace el guardian |
-|--------|---------------------|
-| Entrás a un proyecto | Detecta, carga config, reporta estado |
-| Pedís un cambio | Ejecuta workflow 5 pasos automáticamente |
-| Algo está protegido | Frena y pregunta antes de tocar |
-| Detecta duplicados | "Esto ya existe en X. ¿Crear otro?" |
-| Algo cambia de estructura | "Detecté cambios. ¿Actualizo docs?" |
-| Antes de deploy | Corre checks automáticos |
-| Algo va mal | Sugiere `@guardian report` o `@guardian rollback` |
+## Modos de operación
 
-Comandos existen SOLO para cuando querés control manual. El día a día es
-sin comandos — el AI lo resuelve solo.
+| Modo | Objetivo | Escritura | Conciencia |
+|------|----------|-----------|------------|
+| Plan | Investigar, diseñar | Solo lectura | Percibe + Reflexiona (fuerte) |
+| Build | Implementar, codificar | Lectura + escritura | Decide + Acciona (fuerte) |
 
----
+- Auto-detección: "¿qué pasaría si...?" → Plan. "Hacé esto" → Build.
+- Cambiar con: `guardian mode plan|build` o `curl -X POST :9787/mode`
 
-## Architecture
+## Arquitectura
 
-```
-/srv/guardian/                  ← REPO (git-versionable, GitHub)
-├── SKILL.md                     ← this file
-├── commands/guardian.md         ← @guardian command
-├── install.sh                   ← symlink setup
-├── README.md                    ← for GitHub
-└── .gitignore
+```text
+/srv/guardian/
+├── SKILL.md
+├── PLAN.md / PLAN-INTEGRACION.md
+├── genome/identity.yaml          ← ADN inmutable (solo creador)
+├── lib/
+│   ├── guardian.py                ← CLI principal
+│   ├── guardian_shared.py         ← Helpers compartidos
+│   ├── guardian_memory.py         ← Memoria TF-IDF
+│   ├── guardian_rag.py            ← RAG pipeline (docs + skills + código + memoria)
+│   ├── guardian_absorb.py         ← Absorb v2 (skills → tomos → RAG)
+│   ├── guardian_web.py            ← Dashboard web (:7878)
+│   ├── guardian_backend.py        ← Backend persistente HTTP (:9787)
+│   ├── guardian_genome.py         ← Genoma + ramas
+│   ├── guardian_conciencia.py     ← Conciencia N1 + N2 (meta-evolución)
+│   ├── guardian_evolution.py      ← Evolución + consolidación
+│   └── guardian_mcp.py            ← Servidor MCP (stdio)
+├── prompts/                       ← 5 templates de workflow
+├── templates/                     ← Doc templates
+└── tests/
 
 /var/guardian/
-├── skills-global.json           ← global skill index (ONE file)
-├── projects/<slug>/             ← DATA (per-project, NOT in repo)
-│   ├── config.yaml              ← detected stack, rules, paths
-│   ├── audit.json               ← change audit trail (JSON)
-│   └── skills.json              ← relevant skill references
+├── genome/branches/<hash>/        ← Ramas de usuarios
+│   ├── identity.yaml
+│   ├── state.json
+│   ├── memory/
+│   ├── knowledge/tomes/
+│   └── learnings/
+├── projects/<slug>/               ← Proyectos
+├── skills-global.json
+└── guardian-backend.pid / .log
 ```
 
----
+## Conciencia — 2 niveles
 
-## 1. Detection + lazy load
-
-On session start or `@guardian`:
+### Nivel 1 (operativo — cada sesión)
 
 ```
-1. git remote origin → extract repo name → slug
-2. If no git: basename $PWD → slug
-3. If /var/guardian/projects/<slug>/config.yaml exists:
-   → load ONLY that project's config.yaml
-   → report: "Guardian activo para <slug> (stack: <detected>)"
-4. If not found:
-   → run Setup Wizard
+PERCIBIR: contexto, modo, RAG, errores, experiencia previa
+DECIDIR:  percentiles de certeza
+  > 80%  → ASSUME (actúa sin preguntar)
+  50-80% → ASK_LITTLE ("¿Confirmo?")
+  20-50% → ASK_MUCH ("¿A, B o C?")
+  < 20%  → INVESTIGA (pide más contexto)
+REFLEXIONAR: guardar aprendizaje, indexar RAG
 ```
 
-**skills-global.json se carga solo cuando hace falta** (absorb, check, status).
-No se lee en cada sesión. skills.json por proyecto solo tiene nombres de
-skills relevantes, no la data completa.
-
-### Setup Wizard
+### Nivel 2 (meta-evolución — periódica)
 
 ```
-1. Confirm PROJECT_ROOT
-2. Scan for package.json / Cargo.toml / pyproject.toml / composer.json
-3. Detect stack (framework, language, CSS, test runner, linter)
-4. Detect OpenSpec: /root/p/openspec/
-   └── Ask mode: openspec | engram | hybrid (default: hybrid)
-5. Detect CodeGraph: .codegraph/ exists?
-   └── If missing → suggest codegraph init
-6. Ask: protected paths? (default: none)
-7. Ask: project rules? (e.g. "no modificar .env")
-8. Save /var/guardian/projects/<slug>/config.yaml
-9. Run absorb + docs scan
-10. mem_save: "Project <slug> registered in guardian"
+OBSERVA: calibró bien? preguntó cuando debía asumir?
+EVOLUCIONA: ajusta umbrales, propone mutaciones, re-indexa
+REGISTRA: nueva configuración, aprendizaje permanente
 ```
 
-### config.yaml
+## Conocimiento
 
-```yaml
-project_root: /srv/myapp
-slug: myapp
-registered: 2026-06-12
-stack:
-  detected: [next, react, tailwind, typescript]
-  build: npm run build
-  dev: npm run dev
-  test: npm test
-  lint: npm run lint
-  deploy: pm2 restart myapp
-  logs: pm2 logs myapp --lines 20
-docs:
-  mandatory: [agents, constraints]
-  routes:
-    "src/components/**": frontend
-    "src/hooks/**": frontend
-    "src/store/**": frontend
-    "src/api/**": backend
-    "src/db/**": backend
-    "src/middleware/**": backend
-    "src/styles/**": ui
-    "tailwind.config.*": ui
-    "src/features/**": features
-  available:
-    frontend: true
-    backend: true
-    ui: true
-    features: true
-  last_scan: ~
-openspec:
-  enabled: true
-  mode: hybrid
-codegraph:
-  enabled: true
-  path: /srv/myapp
-rules: []
-audit: true
+- **Skills** → absorb → **tomos de conocimiento** (markdown + YAML metadata)
+- **Documentación** → docs scan → auto-chunk → **RAG**
+- **RAG unificado**: docs + skills(tomos) + memoria + código + decisiones
+- RAG se adapta por modo: plan → docs + knowledge; build → code + memory + docs + knowledge
+
+## Backend persistente
+
+```bash
+guardian backend start           # Inicia daemon en :9787
+guardian backend status          # Ver estado
+guardian backend stop            # Detener
+
+curl :9787/health                # Health check
+curl :9787/conciencia/cycle      # POST — ciclo
+curl :9787/rag?q=consulta&slug=x # GET — RAG query
+curl :9787/genome                # GET — genoma
+curl :9787/evolve                # POST — evolución
 ```
 
----
-
-## 2. Change workflow (5 steps — automatic)
-
-Execute on ANY code change. Do not skip.
+## CLI commands
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ 1. IDENTIFY                                             │
-│    Classify: component / api / style / structure /      │
-│              bugfix / refactor / feature                 │
-├─────────────────────────────────────────────────────────┤
-│ 2. CONSULT                                              │
-│    ├── Scope match: extraer paths del cambio y           │
-│    │   matchear contra config.yaml docs.routes           │
-│    │   ├── Match exacto → servir ese doc solo            │
-│    │   ├── Sin match → AGENTS.md (básico)                │
-│    │   └── CONSTRAINTS.md se sirve SIEMPRE               │
-│    ├── OpenSpec: search /root/p/openspec/specs/          │
-│    │   └── If feature + no spec → suggest SDD            │
-│    ├── Engram: mem_search for past decisions              │
-│    └── config.yaml rules — check restrictions            │
-├─────────────────────────────────────────────────────────┤
-│ 3. ANALYZE                                              │
-│    ├── CodeGraph context/impact/callers/callees         │
-│    └── Check for existing code to avoid duplicates      │
-├─────────────────────────────────────────────────────────┤
-│ 4. EVALUATE                                             │
-│    ├── ¿Ya existe? ¿Se rompe algo? ¿Docs actualizados?  │
-│    └── ¿Hay spec que seguir?                            │
-├─────────────────────────────────────────────────────────┤
-│ 5. EXECUTE                                              │
-│    ├── Present to user: "Tipo: X | Archivos: <paths> |  │
-│    │   Scope: <doc> | Impacto: Y. ¿Procedo?"             │
-│    ├── On approval:                                        │
-│    │   1. pre-change hook (path extraction, scope match,  │
-│    │      snapshot, protected check, delete check, Engram) │
-│    │   2. change                                          │
-│    │   3. post-change hook (diff real, watch verify)      │
-│    │   4. audit.json + mem_save                           │
-│    └── On rejection: wait                                │
-└─────────────────────────────────────────────────────────┘
+Proyecto:   detect, status, check, report, setup
+Cambios:    protect, snapshot, diff, rollback, hooks
+AI:         context, rag, mode, conciencia, conocimiento
+Docs:       docs scan, docs route
+Sistemas:   mode, backend, conciencia, knowledge, memory, absorb,
+            genome, branch, evolve, consolidate
+GitHub:     pr, issue, projects
+Stack:      build, dev, test, lint, typecheck, deploy, logs
 ```
 
----
-
-## 3. Hooks (automatic)
-
-### Pre-change (before writing code)
-
-```
-1. PATH EXTRACTION: AI declara paths afectados
-   Formato: `files: ["src/components/Button.tsx", "src/styles/button.css"]`
-   Si no declara → guardian pregunta "¿Qué archivos vas a tocar?"
-2. SCOPE MATCH: matchea paths contra config.yaml docs.routes
-   → Sirve docs correspondientes + CONSTRAINTS.md al contexto
-3. SNAPSHOT: codegraph files → guarda baseline pre-cambio en audit.json
-4. PROTECTED CHECK: verifica paths protegidos en config.yaml + CONSTRAINTS.md
-   Si protegido → STOP + ask user
-5. DELETE CHECK: si archivo existe y se va a borrar
-   → "¿Estás seguro? Esto elimina X."
-6. Engram: buscar decisiones pasadas relevantes
-```
-
-### Post-change (after code written)
-
-```
-1. codegraph files → árbol POST-cambio
-2. DIFF real: comparar contra snapshot pre-cambio
-3. Para cada archivo nuevo:
-   ├── Matchear contra config.yaml docs.routes
-   ├── Si matchea un doc existente → verificar si ya está documentado
-   └── Si NO está → "Nuevo archivo en scope <doc>. ¿Actualizo?"
-4. Verificar Watch section del doc servido en pre-change
-   ├── Ej: UI.md dice "watch: color hardcodeado → WARN"
-   └── Si el cambio LO VIOLA → alertar
-5. Run tests (config.stack.test) if configured
-6. Run linter (config.stack.lint) if configured
-7. Write to audit.json + mem_save
-8. Snapshot post-cambio = nuevo baseline para próximo diff
-```
-
-### Pre-deploy (before deploy)
-
-```
-1. Run build (config.stack.build)
-2. If build fails → STOP
-3. If active SDD change → suggest sdd-verify
-```
-
-### Post-deploy (after deploy)
-
-```
-1. Smoke test (curl health endpoint)
-2. Write to audit.json
-3. mem_save session summary
-```
-
----
-
-## 4. Audit log (JSON)
-
-```json
-[
-  {"ts":"2026-06-12T10:30:00","type":"change","file":"src/components/Navbar.tsx","desc":"Added mobile menu","status":"ok"},
-  {"ts":"2026-06-12T10:32:00","type":"pre_deploy","build":"passed","deploy":"ok","status":"ok"},
-  {"ts":"2026-06-12T10:35:00","type":"violation","file":".env","desc":"Intentó modificar path protegido","status":"blocked"}
-]
-```
-
-Guarda en `/var/guardian/projects/<slug>/audit.json`.
-
----
-
-## 5. Documentation — scope router
-
-No es una jerarquía de archivos. Es un router de contexto just-in-time.
-
-### AGENTS.md (entry point, se lee SIEMPRE al arrancar)
-
-~25 líneas. Stack + entry points + qué docs existen en el proyecto.
-Es el ÚNICO doc que carga al contexto automáticamente.
-
-### CONSTRAINTS.md (se checkea SIEMPRE en pre-change)
-
-Reglas duras del proyecto: paths protegidos, dependencias prohibidas,
-deuda técnica, no-gos. No es opcional — se verifica en CADA cambio.
-
-### Docs por dominio (se sirven bajo demanda según el scope)
-
-| Doc | Contenido | Se sirve cuando toca |
-|-----|-----------|---------------------|
-| FRONTEND.md | Componentes, hooks, estado, routing, llamadas API | src/components, src/hooks, src/store |
-| BACKEND.md | API routes, DB, auth, middleware, lógica de negocio | src/api, src/db, src/middleware |
-| UI.md | Tokens, colores, spacing, animaciones, layout | src/styles, tailwind.config, *.css |
-| FEATURES.md | Reglas de negocio, flujos, side effects | src/features o feature nuevo |
-
-### Cada doc tiene 4 secciones obligatorias
-
-```markdown
-## Scope       ← qué paths cubre (para matcheo automático)
-## Patterns    ← cómo se hacen las cosas
-## Constraints ← qué NO hacer
-## Watch       ← qué detectar automáticamente + cómo alertar
-```
-
-Nada de paja. Directo al punto.
-
-### Scope routing (cómo se sirve contexto just-in-time)
-
-```
-AI dice: "voy a cambiar el botón primario"
-→ guardian extrae paths: src/components/ui/Button.tsx, src/styles/tokens.css
-→ matchea contra config.yaml docs.routes:
-    src/components/** → frontend
-    src/styles/** → ui
-→ Sirve al contexto: FRONTEND.md + UI.md + CONSTRAINTS.md
-→ NADA MAS se carga. BACKEND.md, FEATURES.md, etc. quedan fuera.
-```
-
-### Prioridad de routes (resolución de conflictos)
-
-Cuando múltiples globs matchean un path, gana el **más específico**:
-
-| Prioridad | Patrón | Ejemplo |
-|-----------|--------|---------|
-| 1 (más alta) | Exacto + extensión | `src/components/ui/Button.tsx` |
-| 2 | Directorio profundo | `src/components/ui/**` |
-| 3 | Directorio padre | `src/components/**` |
-| 4 (más baja) | Raíz amplia | `src/**` |
-
-El guardian ordena routes por especificidad (profundidad de path) y usa el primero que matchea.
-Si dos routes tienen misma profundidad, gana el que aparezca primero en config.yaml.
-
-Si el AI cambia de tema (pasa a tocar backend), el guardian
-re-evalúa y sirve el doc correspondiente.
-
-### Sin match en routes
-
-Si el path no matchea ningún doc:
-→ Sirve AGENTS.md (información básica del proyecto) + CONSTRAINTS.md
-
-### Auto-generación (@guardian docs scan)
-
-```
-1. Leer config.yaml docs.routes → qué docs están habilitados
-2. Para cada doc habilitado:
-   ├── Buscar template en /srv/guardian/templates/<DOC>.md.template
-   └── Llenar template con info del proyecto
-3. Guardar en <project_root>/docs/<docname>.md
-4. AGENTS.md en <project_root>/docs/AGENTS.md
-5. CONSTRAINTS.md en <project_root>/docs/CONSTRAINTS.md
-6. Symlink <project_root>/AGENTS.md → <project_root>/docs/AGENTS.md (para compatibilidad OpenCode)
-7. Update last_scan en config.yaml
-```
-
-### Narrative docs (@guardian docs write)
-
-```
-1. Ask what kind: tutorial / how-to / explanation / reference
-2. Invoke documentation-writer with project context + docs ya existentes
-```
-
----
-
-## 6. Skill registry & absorb
-
-### Global (ONE file for all projects)
-
-`/var/guardian/skills-global.json` — skills completos con rating.
-
-### Per-project (just references)
-
-`/var/guardian/projects/<slug>/skills.json` — SOLO nombres de skills relevantes.
-
-```json
-{
-  "relevant": ["007", "bug-hunter", "documentation-writer"],
-  "last_absorb": "2026-06-12"
-}
-```
-
-### Absorption (@guardian absorb)
-
-```
-1. Scan /root/.agents/skills/*/SKILL.md
-2. Scan /root/.config/opencode/skills/*/SKILL.md
-3. Extract: name, description, triggers
-4. Rate (0-50): clarity + triggers + workflow + DOs/DON'Ts + examples
-5. Stars: 0-16★ / 17-33★★ / 34-50★★★
-6. Save global: /var/guardian/skills-global.json
-7. For each project: determine relevant skills → save references
-```
-
-**Flujo automático:** se ejecuta en setup wizard y cuando el usuario menciona
-"nuevo skill" o "actualizar skills". No requiere comando en el día a día.
-
----
-
-## 7. Stack helpers (automatic + manual)
-
-When user asks to build/test/deploy → run configured command from config.yaml.
-
-```
-@guardian build      @guardian test       @guardian dev
-@guardian lint       @guardian typecheck  @guardian deploy
-@guardian logs       @guardian git branch @guardian git commit
-```
-
-If command not configured:
-> "No hay comando configurado para <action>. Usá @guardian setup."
-
----
-
-## 8. Integrations (optional — external tools)
-
-| Tool | Integration |
-|------|-------------|
-| **Engram** | mem_search in step 2, mem_save after changes and sessions |
-| **CodeGraph** | context/impact/callers/callees in step 3 |
-| **OpenSpec/SDD** | Check specs in step 2, suggest SDD for features |
-| **documentation-writer** | Narrative docs (@guardian docs write) |
-| **agents-md-generator** | AGENTS.md generation |
-
-All optional. Guardian works fully without them.
-
----
-
-## 9. Commands (reference — not required)
-
-| Command | What it does |
-|---------|-------------|
-| `@guardian` | Load skill + detect project |
-| `@guardian setup` | Re-run setup wizard |
-| `@guardian absorb` | Re-scan + rate all skills |
-| `@guardian status` | Dashboard: rules, last changes, protected paths |
-| `@guardian report` | Violations, most/least followed rules |
-| `@guardian check` | Verify all rules and protected paths |
-| `@guardian protect <path>` | Add a protected path |
-| `@guardian snapshot <path>` | Backup a file before modifying |
-| `@guardian forget <slug>` | Remove project from guardian |
-| `@guardian docs scan` | Auto-generate docs from code |
-| `@guardian docs write` | Narrative documentation |
-| `@guardian docs route <path>` | Show which doc would be served for a path |
-| `@guardian rollback` | Suggest reverting last change |
-| `@guardian hooks` | Show hook status |
-| `@guardian build | dev | test | lint | typecheck | deploy | logs` | Stack helpers |
-| `@guardian git branch | commit` | Git helpers |
-
-### Command implementations
-
-#### @guardian status
-```
-1. Load project config.yaml
-2. Read audit.json (last 20 entries)
-3. Display:
-   - Project: <slug> | Stack: <detected>
-   - Active docs: [frontend, ui, ...]
-   - Protected paths: <count>
-   - Last 5 changes from audit.json
-   - Hook status: pre-change ✓ / post-change ✓ / pre-deploy ✓ / post-deploy ✓
-   - Docs last_scan: <date or never>
-```
-
-#### @guardian report
-```
-1. Load audit.json
-2. Analyze:
-   - Total changes: <count>
-   - Violations: <count> (list each)
-   - Most changed files: top 5
-   - Docs update rate: % of changes that updated docs
-   - Rule compliance: % of changes without violations
-3. Display trends over last 30 days
-```
-
-#### @guardian check
-```
-1. Load config.yaml + CONSTRAINTS.md
-2. Verify:
-   - No protected paths modified recently (scan git diff)
-   - No forbidden deps in package.json / Cargo.toml / etc.
-   - Docs not stale (last_scan < 7 days)
-   - All available docs exist in docs/
-   - Skills.json has relevant skills
-3. Report: PASS / FAIL with details
-```
-
-#### @guardian rollback
-```
-1. Read audit.json for last successful change
-2. Show: "Último cambio: <file> - <desc> - <timestamp>"
-3. Ask: "¿Revertir este cambio?"
-4. If yes: git checkout HEAD -- <file> + audit.json entry
-```
-
-#### @guardian protect <path>
-```
-1. Add path to config.yaml docs.routes (if new scope)
-2. Add path to CONSTRAINTS.md Protected section
-3. Update config.yaml
-4. Confirm: "Protected: <path>"
-```
-
-#### @guardian snapshot <path>
-```
-1. cp <path> <path>.guardian-snapshot-<timestamp>
-2. Record in audit.json: type=snapshot, file=<path>
-3. Confirm: "Snapshot created: <path>.guardian-snapshot-<timestamp>"
-```
-
-#### @guardian docs route <path>
-```
-1. Load config.yaml docs.routes
-2. Match <path> against routes with priority
-3. Show:
-   Path: <path>
-   Match: <route> → <doc>
-   Priority: <1-4>
-   Doc served: <doc>.md + CONSTRAINTS.md
-```
-
-#### @guardian hooks
-```
-1. Load config.yaml
-2. Show each hook status:
-   pre-change:  enabled ✓ (checks: protected, delete, engram, snapshot)
-   post-change: enabled ✓ (checks: diff, watch, tests, lint)
-   pre-deploy:  enabled ✓ (checks: build, sdd-verify)
-   post-deploy: enabled ✓ (checks: smoke test, audit, mem_save)
-```
+## MCP tools (disponibles via stdio o HTTP)
+
+- `read_file`, `write_file` (respeta modo build)
+- `run_command`, `rag_query`, `conciencia_cycle`
+- `mode_switch`, `knowledge_search`
+- `genome_status`, `branch_fork`
+
+## Hooks
+
+- `pre-change`: snapshot, paths protegidos
+- `post-change`: diff, tests, lint, memoria, auditoría
+- `pre-deploy`: build check
+- `post-deploy`: smoke test, auditoría, memoria
+
+## Memoria
+
+| Tipo | TTL | Uso |
+|------|-----|-----|
+| `landmark` | 90d | Hallazgos críticos |
+| `decision` | 30d | Decisiones de diseño |
+| `pattern` | 14d | Convenciones de código |
+| `note` | 30d | Notas libres |
+| `analysis` | 7d | Hallazgos de impacto |
+| `session` | 7d | Marcadores de sesión |
+
+## Notas
+
+- Sin ORM, sin Docker, solo stdlib (+ PyYAML opcional)
+- YAML para genoma, JSON para estado
+- Todo sincronizado: CLI, backend HTTP y MCP comparten guardian_shared.py
+- Las ramas del ser (brain, eyes, hands, legs, nanos) se conectan via API

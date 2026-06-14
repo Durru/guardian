@@ -1,8 +1,7 @@
-## Scope
-{{ui_scope}}
+## Stack
+{{framework}}
 
 ## Patterns
-{{ui_patterns}}
 
 ### Design Tokens
 - Colors: defined in `tailwind.config.ts` (primary, secondary, accent, neutral)
@@ -29,7 +28,6 @@
 - Color contrast AA minimum
 
 ## Constraints
-{{ui_constraints}}
 
 ### DO NOT
 - Hardcode colors - use design tokens
@@ -38,7 +36,6 @@
 - Skip focus states on interactive elements
 
 ## Watch
-{{ui_watch}}
 
 ### Auto-alerts
 - Hardcoded color detected → suggest token

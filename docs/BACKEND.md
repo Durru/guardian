@@ -1,16 +1,16 @@
 ## Stack
-{{runtime}} / {{framework}} / {{db}}
+python / — / PostgreSQL
 
 ## Patterns
 
 ### API Routes
 - REST: `GET /api/resource`, `POST /api/resource`, etc.
-- Validate input with {{validator}}
+- Validate input with —
 - Return consistent error format: `{ error: { code, message, details } }`
 - Use proper HTTP status codes
 
 ### Database
-- ORM: {{orm}}
+- ORM: —
 - Migrations in `prisma/migrations/` or equivalent
 - Indexes on frequently queried columns
 - Transactions for multi-step operations

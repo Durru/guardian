@@ -1,0 +1,16 @@
+version: 2.0.0
+user: default
+forked_from: /srv/guardian/genome/identity.yaml
+created: 2026-06-14
+branch_meta:
+  session_count: 0
+  last_session: null
+  plan_sessions: 0
+  build_sessions: 0
+consciousness:
+  thresholds:
+    assume: 0.8
+    ask_little_floor: 0.5
+    ask_much_floor: 0.2
+  last_action: null
+  last_confidence: 0.0

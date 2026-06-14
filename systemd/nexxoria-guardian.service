@@ -1,0 +1,16 @@
+[Unit]
+Description=Nexxoria Guardian Backend
+Documentation=https://github.com/nexxoria/guardian
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/nexxoria-guardian/lib/guardian_backend.py serve
+Restart=on-failure
+RestartSec=5
+PIDFile=/var/lib/nexxoria-guardian/guardian-backend.pid
+StandardOutput=append:/var/lib/nexxoria-guardian/guardian-backend.log
+StandardError=append:/var/lib/nexxoria-guardian/guardian-backend.log
+
+[Install]
+WantedBy=multi-user.target

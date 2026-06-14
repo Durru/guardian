@@ -1,19 +1,21 @@
-# {{slug}}
+# test-activate
 
 ## Qué es
-{{project_type}}
+webapp
 
 ## Stack
-- runtime: {{runtime}}
-- framework: {{framework}}
-- database: {{db}}
-- dev: {{dev_cmd}}
-- test: {{test_cmd}}
-- lint: {{lint_cmd}}
-- build: {{build_cmd}}
+- runtime: python
+- framework: —
+- database: —
+- dev: —
+- test: —
+- lint: —
+- build: —
 
 ## Docs
-{{docs_list}}
+- [BACKEND.md](docs/BACKEND.md)
+- [FEATURES.md](docs/FEATURES.md)
+- [CONSTRAINTS.md](docs/CONSTRAINTS.md)
 
 ## Architecture (Guardian v2)
 - [CONCEPTOS.md](docs/CONCEPTOS.md) — Filosofía, ser orgánico, conciencia N1+N2, genoma, ramas, tomos, RAG

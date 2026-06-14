@@ -1,1 +1,21 @@
-# Project data lives in /var/guardian/projects/ — not in this repo
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Install
+install.sh
+
+# Runtime (created by install.sh)
+/var/lib/nexxoria-guardian/
+
+# Local
+*.local/
+.env
