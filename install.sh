@@ -114,7 +114,7 @@ else
     info "Instalando desde GitHub..."
     TEMP_DIR=$(mktemp -d)
     trap "rm -rf $TEMP_DIR" EXIT
-    git clone --depth 1 https://github.com/nexxoria/guardian.git "$TEMP_DIR/guardian" 2>/dev/null || {
+    git clone --depth 1 https://github.com/Durru/guardian.git "$TEMP_DIR/guardian" 2>/dev/null || {
         fail "No se pudo clonar el repositorio. Verificá la conexión a Internet."
     }
     SCRIPT_DIR="$TEMP_DIR/guardian"
