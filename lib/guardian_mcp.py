@@ -326,19 +326,22 @@ def main():
             continue
         msg_id = msg.get("id")
         method = msg.get("method", "")
+
         if method == "initialize":
             _respond(msg_id, {
                 "protocolVersion": "2025-03-26",
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "guardian-mcp", "version": "2.0.0"},
             })
-        elif method == "list_tools":
+        elif method in ("list_tools", "tools/list"):
             _respond(msg_id, {"tools": TOOLS})
-        elif method == "call_tool":
+        elif method in ("call_tool", "tools/call"):
             _handle_call(msg.get("params", {}).get("name", ""), msg.get("params", {}).get("arguments", {}), msg_id)
         elif method == "ping":
             _respond(msg_id, {})
-        elif method == "notifications/initialized":
+        elif method == "logging/setLevel":
+            _respond(msg_id, {})
+        elif method in ("notifications/initialized", "notifications/cancelled", "notifications/progress"):
             pass
         else:
             _respond(msg_id, error={"code": -32601, "message": f"Method not found: {method}"})
