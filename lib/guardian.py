@@ -2045,6 +2045,57 @@ def _conciencia_meta(slug):
 
 # ── cmd_genome ─────────────────────────────────────────────────
 
+# ── cmd_permission_check ──────────────────────────────────────
+
+
+def cmd_permission_check(slug, path=""):
+    config = _read_config(slug)
+    if not config:
+        return err(f"Proyecto '{slug}' no encontrado.")
+    mode_state = shared.read_mode_state(slug)
+    mode = mode_state.get("mode", shared.DEFAULT_MODE)
+    import guardian_conciencia
+    import guardian_rag as mod_rag
+    query = f"edit: {path}" if path else "generic operation"
+    source_filter = {"memory", "knowledge", "doc"}
+    if mode == "build":
+        source_filter.add("code")
+    chunks = mod_rag._collect_chunks(slug, config, source_filter)
+    rag_results = None
+    if chunks:
+        contents = [c["content"] for c in chunks]
+        from guardian_memory import _compute_tfidf_index, _embed_text
+        idf, vocab = _compute_tfidf_index([{"content": ct} for ct in contents])
+        query_vec = _embed_text(query, idf, vocab)
+        if any(query_vec):
+            all_scored = mod_rag._rerank(chunks, idf, vocab, query_vec, None)
+            rag_results = []
+            for c in all_scored[:5]:
+                rag_results.append({
+                    "score": c.get("_score", 0.0),
+                    "source": c.get("source"),
+                    "content": c.get("content", "")[:200],
+                })
+    result = guardian_conciencia.quick_check(
+        slug, path=path, operation_type="edit", mode=mode,
+        rag_results=rag_results,
+    )
+    action = result["action"]
+    icon = {"assume": "🟢", "ask_little": "🟡", "ask_much": "🟠", "investigate": "🔴"}
+    _sep(_("🔐 Permission check: {slug}", slug=slug))
+    print(_("  Path:       {path}", path=path or "(none)"))
+    print(_("  Mode:       {mode}", mode=mode))
+    print(_("  Confidence: {c}", c=result["confidence"]))
+    print(_("  Action:     {i} {action}", i=icon.get(action, "❓"), action=action))
+    print(_("  Allowed:    {allowed}", allowed=_("✅ Sí") if result["allowed"] else _("❌ No")))
+    if not result["allowed"]:
+        _sep(_("💡 Sugerencia"))
+        print(_("  La conciencia no tiene suficiente confianza para esta operación."))
+        print(_("  Absorbé skills relevantes para este módulo y ejecutá un ciclo de conciencia:"))
+        print(_("    guardian conciencia cycle <qué querés hacer>"))
+    return 0
+
+
 def cmd_genome(slug, cmd_args):
     sub = cmd_args[0] if cmd_args else "status"
     if sub == "status":
@@ -2699,6 +2750,7 @@ def main():
         print("  mode <plan|build|status>     Modo de operación")
         print("  backend <start|stop|restart|status>  Backend persistente")
         print("  conciencia <cycle|status|history|meta>  Conciencia + meta-evolución")
+        print("  permission check <path>      Verificar si una operación está permitida")
         print("  knowledge <args>             Conocimiento (tomes/RAG)")
         print("  genome <status|diff>         ADN del ser")
         print("  branch <list|fork|status|diff>  Ramas de evolución")
@@ -2808,6 +2860,14 @@ def main():
     if cmd == "conciencia":
         slug, rest = _resolve_slug(cmd_args)
         return cmd_conciencia(slug, rest)
+
+    if cmd == "permission":
+        if not cmd_args or cmd_args[0] != "check":
+            return err("Uso: guardian permission check <path> [slug]")
+        path = cmd_args[1] if len(cmd_args) > 1 else ""
+        rest = cmd_args[2:]
+        slug, _ = _resolve_slug(rest)
+        return cmd_permission_check(slug, path)
 
     if cmd == "genome":
         slug, rest = _resolve_slug(cmd_args)

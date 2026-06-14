@@ -239,4 +239,29 @@ def evolve(slug, cycles, thresholds):
         "total_cycles_analyzed": total,
     }
     save_learning(slug, entry)
-    return entry
+
+
+# ── Quick permission check (no LLM) ──────────────────────────
+
+
+def quick_check(slug, path="", operation_type="edit", mode="plan", rag_results=None):
+    """Fast permission check using score_context + consciousness_action — no LLM call."""
+    confidence = score_context({
+        "question": f"{operation_type}: {path}",
+        "mode": mode,
+        "rag": {"results": rag_results} if rag_results else {},
+        "context": {"slug": slug, "operation_type": operation_type},
+    })
+    thresholds = read_thresholds(slug)
+    action = consciousness_action(confidence, mode, thresholds)
+    return {
+        "slug": slug,
+        "path": path,
+        "operation": operation_type,
+        "mode": mode,
+        "confidence": round(confidence, 3),
+        "action": action,
+        "allowed": action in ("assume", "ask_little"),
+    }
+
+

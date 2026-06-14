@@ -313,6 +313,24 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             result = _run_cli([sys.executable, str(Path(__file__).with_name("guardian.py")), "docs", "scan", slug])
             return _json_response(self, 200 if result["rc"] == 0 else 400, {"slug": slug, **result})
 
+        if parsed.path == "/permission/check":
+            slug = _project_slug(params, body)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            path = str(body.get("path", "") or "")
+            operation = str(body.get("operation", "edit"))
+            mode_state = shared.read_mode_state(slug)
+            mode = str(body.get("mode") or mode_state.get("mode", shared.DEFAULT_MODE))
+            query = f"{operation}: {path}" if path else f"{operation}"
+            rag = _rag_query(slug, query, mode=mode) if query else None
+            result = guardian_conciencia.quick_check(
+                slug, path=path, operation_type=operation, mode=mode,
+                rag_results=rag.get("results") if rag else None,
+            )
+            if rag:
+                result["rag_score"] = max((r.get("score", 0.0) for r in rag.get("results", [])), default=0.0)
+            return _json_response(self, 200, result)
+
         if parsed.path == "/mcp/call":
             import guardian_mcp
             tool_name = body.get("tool", "")
