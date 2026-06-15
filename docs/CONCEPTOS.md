@@ -1,4 +1,6 @@
-# Guardian v2 — Conceptos
+# Guardian v3 — Conceptos
+
+> v3 = v2 + **memoria cognitiva persistente**. Toda la filosofía del "ser orgánico" se preserva; agregamos la capacidad de recordar, olvidar, reflexionar y evolucionar a través de proyectos y sesiones.
 
 ## Filosofía
 
@@ -348,3 +350,82 @@ El backend expone 19 endpoints REST:
 ├── guardian-backend.pid
 └── guardian-backend.log
 ```
+
+---
+
+## v3 — Capa cognitiva
+
+### 5 niveles de memoria
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  WM (Working Memory) — siempre cargada, ~200 líneas     │
+│  └─ GUARDIAN.md: esencia del proyecto, regenerado post-sesión │
+├──────────────────────────────────────────────────────────┤
+│  Por proyecto (4 DBs SQLite):                            │
+│  ├─ SM (Semantic)    — conocimiento estable, hechos      │
+│  ├─ EM (Episodic)    — eventos con timestamp             │
+│  ├─ PM (Procedural)  — cómo hacer cosas, workflows       │
+│  └─ RM (Reflection)  — lecciones aprendidas              │
+├──────────────────────────────────────────────────────────┤
+│  Global (3 DBs, cross-proyecto):                         │
+│  ├─ SM-G — patrones de stack (odoo, nextjs, etc.)        │
+│  ├─ PM-G — workflows reutilizables                       │
+│  └─ RM-G — lecciones universales                         │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Governor — el arte de olvidar
+
+Toda escritura pasa por el Governor:
+1. **Importancia** — score 0–1; bajo = rechazado o degradado
+2. **Duplicados** — embedding hash + content hash; near-duplicate detectado
+3. **TTL** — cada nodo tiene tiempo de vida; expira y se comprime
+4. **Contradicción** — nuevo nodo contradice existente = marked stale
+
+### Reflection Agent
+
+Al cerrar sesión (`session_end`), corre un agente que:
+1. Lee los últimos N episodios
+2. Extrae patrones (lo que funcionó, lo que falló)
+3. Actualiza PM (procedural) y RM (reflection)
+4. Regenera GUARDIAN.md con los cambios
+
+### GUARDIAN.md — el archivo que siempre se lee
+
+≤200 líneas. Se regenera automáticamente desde SM/EM/PM/RM con importance > 0.7. El LLM lo ve primero antes de cada acción. Es el "cerebro consciente" — el resto es "inconsciente" (consultable por query).
+
+### Modes — 5 estados
+
+| Modo | Lectura | Escritura | Uso |
+|---|---|---|---|
+| `read` | ✓ | ✗ | Explorar |
+| `plan` | ✓ | ✗ | Diseñar |
+| `build` | ✓ | ✓ | Implementar |
+| `commit` | ✓ | ✓ | Versionar |
+| `review` | ✓ | ✗ | Auditar |
+
+### Specializations
+
+Stack-aware knowledge. Cuando activas `odoo` en un proyecto, el cerebro carga 5 tomos:
+- Arquitectura Odoo
+- ORM patterns
+- View XML
+- Migration strategies
+- Module structure
+
+Otros: `nextjs`, `fastapi`, `postgres`, `python`.
+
+### OpenSpec + planes ad-hoc
+
+No todo es OpenSpec. Los planes ad-hoc viven en el estado `proposal` → `tasks` → `archive`. OpenSpec sigue el ciclo completo `proposal → specs → design → tasks → apply → verify → archive`.
+
+### Publish/Clone/Fork
+
+- **Publish** — convierte un proyecto en template sanitizado (regex secrets, manifest)
+- **Clone** — instancia un template con nuevo slug
+- **Fork** — crea linaje (parent → child) para genealogía de proyectos
+
+### Capability routing
+
+Model card con EMA α=0.1 rastrea éxito por tipo de tarea. Decide si delegar al LLM o responder con la memoria local.

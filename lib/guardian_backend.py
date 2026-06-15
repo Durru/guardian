@@ -14,8 +14,19 @@ import guardian_absorb
 import guardian_conciencia
 import guardian_evolution
 import guardian_genome
+import guardian_brain
+import guardian_brain_schema
+import guardian_brain_migration
+import guardian_capability
+import guardian_global
+import guardian_knowledge
+import guardian_lineage
+import guardian_maintain
+import guardian_plan
+import guardian_publish
 import guardian_rag
 import guardian_shared as shared
+import guardian_specialization
 from guardian_shared import _
 
 
@@ -243,6 +254,88 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
         if parsed.path == "/mcp/tools":
             import guardian_mcp
             return _json_response(self, 200, {"tools": guardian_mcp.TOOLS})
+
+        # ── v3 brain endpoints ──
+        if parsed.path == "/brain/status":
+            slug = _project_slug(params)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, guardian_brain.status(slug))
+
+        if parsed.path == "/brain/guardian":
+            slug = _project_slug(params)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            content = guardian_brain.read_guardian_md(slug)
+            return _json_response(self, 200, {"content": content, "lines": len(content.splitlines()) if content else 0})
+
+        if parsed.path == "/brain/query":
+            slug = _project_slug(params)
+            level = params.get("level", ["semantic"])[0]
+            q = params.get("q", [""])[0]
+            top_k = int(params.get("top_k", ["5"])[0])
+            if not slug or not q:
+                return _json_response(self, 400, {"error": "slug and q required"})
+            results = guardian_brain.query(slug, level, q, top_k=top_k)
+            return _json_response(self, 200, {"results": results})
+
+        if parsed.path == "/brain/orchestrate":
+            slug = _project_slug(params)
+            q = params.get("q", [""])[0]
+            if not slug or not q:
+                return _json_response(self, 400, {"error": "slug and q required"})
+            return _json_response(self, 200, guardian_brain.orchestrate(slug, q))
+
+        if parsed.path == "/session/handoff":
+            slug = _project_slug(params)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, {"handoff": guardian_brain.read_handoff(slug)})
+
+        # ── v3 knowledge endpoints ──
+        if parsed.path == "/knowledge/list":
+            slug = _project_slug(params)
+            kind = params.get("kind", [None])[0]
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, {"items": guardian_knowledge.list_knowledge(slug, kind=kind)})
+
+        if parsed.path == "/knowledge/stale":
+            slug = _project_slug(params)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, {"stale": guardian_knowledge.detect_stale(slug)})
+
+        if parsed.path == "/specializations":
+            return _json_response(self, 200, {"specializations": guardian_specialization.list_available()})
+
+        if parsed.path == "/plan/list":
+            slug = _project_slug(params)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, {"plans": guardian_plan.list_plans(slug)})
+
+        if parsed.path == "/maintain/report":
+            slug = _project_slug(params)
+            project_root = params.get("project_root", [None])[0]
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, guardian_maintain.health_report(slug, project_root=project_root))
+
+        if parsed.path == "/global/status":
+            return _json_response(self, 200, guardian_brain_schema.status(None))
+
+        if parsed.path == "/capability/status":
+            return _json_response(self, 200, guardian_capability.load_card())
+
+        if parsed.path == "/templates":
+            return _json_response(self, 200, {"templates": guardian_publish.list_templates()})
+
+        if parsed.path == "/lineage":
+            slug = _project_slug(params)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, guardian_lineage.read_lineage(slug))
 
         return _json_response(self, 404, {"error": "not found"})
 
@@ -516,6 +609,165 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             })
             result["status"] = "ok"
             return _json_response(self, 200, result)
+
+        # ── v3 brain POST ──
+        if parsed.path == "/brain/write":
+            slug = _project_slug(params, body)
+            level = str(body.get("level", "semantic"))
+            if not slug or level not in guardian_brain_schema.PROJECT_LEVELS:
+                return _json_response(self, 400, {"error": "slug and valid level required"})
+            node = {
+                "kind": str(body.get("kind", "note")),
+                "content": str(body.get("content", "")),
+                "importance": float(body.get("importance", 0.6)),
+            }
+            if body.get("tags"):
+                node["tags"] = str(body["tags"]).split(",")
+            if body.get("ttl"):
+                node["ttl"] = int(body["ttl"])
+            if body.get("url"):
+                node["url"] = str(body["url"])
+            if body.get("stack"):
+                node["stack"] = str(body["stack"]).split(",")
+            result = guardian_brain.write_governed(slug, level, node)
+            return _json_response(self, 200 if result.get("ok") else 400, result)
+
+        if parsed.path == "/brain/reflect":
+            slug = _project_slug(params, body)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, guardian_brain.run_reflection(slug))
+
+        if parsed.path == "/brain/regenerate-guardian":
+            slug = _project_slug(params, body)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, guardian_brain.regenerate_guardian_md(slug))
+
+        if parsed.path == "/brain/auto-compact":
+            slug = _project_slug(params, body)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            dry_run = bool(body.get("dry_run", False))
+            return _json_response(self, 200, guardian_brain.auto_compact(slug, dry_run=dry_run))
+
+        # ── v3 session POST ──
+        if parsed.path == "/session/start":
+            slug = _project_slug(params, body)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            mode = str(body.get("mode", "") or params.get("mode", [""])[0]) or None
+            return _json_response(self, 200, guardian_brain.session_start(slug, mode=mode))
+
+        if parsed.path == "/session/continue":
+            slug = _project_slug(params, body)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, guardian_brain.session_continue(slug))
+
+        if parsed.path == "/session/end":
+            slug = _project_slug(params, body)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            reason = str(body.get("reason", "explicit"))
+            return _json_response(self, 200, guardian_brain.session_end(slug, reason=reason))
+
+        # ── v3 knowledge POST ──
+        if parsed.path == "/knowledge/research":
+            slug = _project_slug(params, body)
+            query = str(body.get("query", ""))
+            depth = str(body.get("depth", "quick"))
+            if not slug or not query:
+                return _json_response(self, 400, {"error": "slug and query required"})
+            return _json_response(self, 200, guardian_knowledge.research(slug, query, depth=depth))
+
+        if parsed.path == "/knowledge/scrape":
+            slug = _project_slug(params, body)
+            url = str(body.get("url", ""))
+            if not slug or not url:
+                return _json_response(self, 400, {"error": "slug and url required"})
+            return _json_response(self, 200, guardian_knowledge.scrape(slug, url))
+
+        if parsed.path == "/knowledge/refresh":
+            slug = _project_slug(params, body)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, guardian_knowledge.refresh(slug))
+
+        # ── v3 specialization POST ──
+        if parsed.path == "/specializations/enable":
+            slug = _project_slug(params, body)
+            name = str(body.get("name", ""))
+            if not slug or not name:
+                return _json_response(self, 400, {"error": "slug and name required"})
+            return _json_response(self, 200, guardian_specialization.enable(slug, name))
+
+        if parsed.path == "/specializations/disable":
+            slug = _project_slug(params, body)
+            name = str(body.get("name", ""))
+            if not slug or not name:
+                return _json_response(self, 400, {"error": "slug and name required"})
+            return _json_response(self, 200, guardian_specialization.disable(slug, name))
+
+        # ── v3 plan POST ──
+        if parsed.path == "/plan/new":
+            slug = _project_slug(params, body)
+            title = str(body.get("title", ""))
+            plan_type = str(body.get("type", "full"))
+            if not slug or not title:
+                return _json_response(self, 400, {"error": "slug and title required"})
+            return _json_response(self, 200, guardian_plan.new_plan(slug, title, plan_type=plan_type))
+
+        # ── v3 publish/clone/fork/migrate POST ──
+        if parsed.path == "/publish":
+            slug = _project_slug(params, body)
+            version = str(body.get("version", "1.0.0"))
+            to = str(body.get("to", "template"))
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, guardian_publish.publish(slug, version=version, to=to))
+
+        if parsed.path == "/clone":
+            template_slug = str(body.get("template", ""))
+            new_slug = str(body.get("new", ""))
+            if not template_slug or not new_slug:
+                return _json_response(self, 400, {"error": "template and new required"})
+            return _json_response(self, 200, guardian_publish.clone(template_slug, new_slug))
+
+        if parsed.path == "/fork":
+            parent = str(body.get("parent", ""))
+            child = str(body.get("child", ""))
+            if not parent or not child:
+                return _json_response(self, 400, {"error": "parent and child required"})
+            return _json_response(self, 200, guardian_publish.fork(parent, child))
+
+        if parsed.path == "/migrate":
+            slug = _project_slug(params, body)
+            dry_run = bool(body.get("dry_run", False))
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, guardian_brain_migration.migrate(slug, dry_run=dry_run))
+
+        # ── v3 capability POST ──
+        if parsed.path == "/capability/measure":
+            task_type = str(body.get("task_type", ""))
+            success = bool(body.get("success", False))
+            drift = body.get("drift")
+            if not task_type:
+                return _json_response(self, 400, {"error": "task_type required"})
+            return _json_response(self, 200, guardian_capability.record_outcome(
+                task_type, success, drift_score=float(drift) if drift is not None else None
+            ))
+
+        if parsed.path == "/capability/routing":
+            task_type = str(body.get("task_type", ""))
+            ctx_size = int(body.get("context_size", 0))
+            complexity = str(body.get("complexity", "medium"))
+            if not task_type:
+                return _json_response(self, 400, {"error": "task_type required"})
+            return _json_response(self, 200, guardian_capability.routing_decision(
+                task_type, context_size=ctx_size, complexity=complexity
+            ))
 
         return _json_response(self, 404, {"error": "not found"})
 
