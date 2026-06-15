@@ -134,6 +134,7 @@ const MODULES: ModuleRule[] = [
   { name: "backend",      guard: "conciencia", message: "Backend changes need conciencia approval." },
   { name: "absorb",       guard: "conciencia", message: "Absorb changes need conciencia approval." },
   { name: "mcp",          guard: "conciencia", message: "MCP module needs conciencia approval." },
+  { name: "forja",        guard: "conciencia", message: "Forja module needs conciencia approval." },
   { name: "config",       guard: "conciencia", message: "Config changes need conciencia approval." },
   { name: "plugin",       guard: "allowed",    message: "" },
   { name: "templates",    guard: "allowed",    message: "" },
@@ -156,6 +157,7 @@ function matchModule(path: string): ModuleRule | undefined {
   if (normalized.includes("guardian_backend")) return MODULES.find(m => m.name === "backend")
   if (normalized.includes("guardian_absorb")) return MODULES.find(m => m.name === "absorb")
   if (normalized.includes("guardian_mcp")) return MODULES.find(m => m.name === "mcp")
+  if (normalized.includes("guardian_forja")) return MODULES.find(m => m.name === "forja")
   if (normalized.includes("guardian.py") || normalized.includes("guardian_shared")) return MODULES.find(m => m.name === "core_lib")
   if (normalized.includes(".opencode/")) return MODULES.find(m => m.name === "plugin")
   if (normalized.includes("/templates/")) return MODULES.find(m => m.name === "templates")

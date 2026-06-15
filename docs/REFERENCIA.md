@@ -50,6 +50,7 @@
 | `guardian branch <list\|fork\|status\|diff> [slug]` | Ramas de evolución |
 | `guardian evolve [slug]` | Disparar evolución de rama |
 | `guardian consolidate [slug]` | Consolidar memoria + RAG |
+| `guardian forja <index\|list\|doctor\|new\|validate\|impact\|edit\|rm\|protect\|run\|function\|endpoint\|mcp-tool\|diff\|graph\|patch>` | La Forja: meta-módulo del arquitecto |
 
 ### GitHub
 
@@ -130,6 +131,21 @@
 | `/docs/scan` | `{"slug": ""}` | Resultado del scan + auto RAG index |
 | `/permission/check` | `{"slug": "", "path": "", "operation": "edit\|bash"}` | `{"slug", "path", "operation", "mode", "confidence", "action", "allowed"}` |
 | `/mcp/call` | `{"slug": "", "tool": "", "args": {}}` | `{"ok": true}` |
+| `/forja/index` | — | Índice de módulos del sistema |
+| `/forja/list` | — | Listado de módulos con estado |
+| `/forja/doctor` | — | Diagnóstico de salud |
+| `/forja/validate` | `path` | Validar un módulo contra convenciones |
+| `/forja/module/new` | `{"name": "", "desc": ""}` | Scaffold nuevo módulo |
+| `/forja/rm` | `{"module": "", "force": false}` | Eliminar módulo (con seguridad) |
+| `/forja/edit` | `{"file": ""}` | Leer contenido de archivo |
+| `/forja/run` | `{"text": ""}` | Ejecutar instrucción en lenguaje natural |
+| `/forja/protect` | `{"module": ""}` | Marcar módulo como protegido |
+| `/forja/function` | `{"module": "", "name": "", "register": false}` | Agregar función cmd_ a módulo |
+| `/forja/endpoint` | `{"method": "GET", "path": "", "module": ""}` | Scaffold endpoint REST |
+| `/forja/mcp-tool` | `{"name": "", "module": ""}` | Scaffold tool MCP |
+| `/forja/diff` | — | Mostrar cambios desde último snapshot |
+| `/forja/graph` | — | Grafo de dependencias ASCII |
+| `/forja/patch` | `{"file": "", "old": "", "new": ""}` | Edición parcial find+replace |
 
 ---
 
@@ -161,6 +177,15 @@ Salida: línea JSON por stdout con resultado o error.
 | `knowledge_search` | `slug`, `query` | Buscar en tomos |
 | `genome_status` | `slug` | Ver identidad del genoma |
 | `branch_fork` | `slug` | Crear rama para usuario |
+| `forja_doctor` | — | Diagnóstico de todos los módulos |
+| `forja_validate` | `module` | Validar un módulo |
+| `forja_index` | — | Reconstruir índice de auto-conocimiento |
+| `forja_list` | — | Listar módulos con estado |
+| `forja_scaffold` | `name`, `desc` | Crear nuevo módulo |
+| `forja_run` | `text` | Ejecutar instrucción en lenguaje natural |
+| `forja_diff` | — | Mostrar cambios desde último snapshot |
+| `forja_graph` | — | Grafo de dependencias ASCII |
+| `forja_patch` | `file`, `old`, `new` | Edición parcial find+replace |
 
 ---
 
@@ -179,6 +204,7 @@ Salida: línea JSON por stdout con resultado o error.
 | Conciencia | `guardian_conciencia.py` | N1 (score_context, consciousness_action, run_cycle), N2 (evolve, thresholds) |
 | Evolución | `guardian_evolution.py` | evolve_branch, consolidate (memory GC + RAG reindex + learnings) |
 | MCP | `guardian_mcp.py` | JSON-RPC 2.0 server, 9 tool definitions y handlers |
+| Forja | `guardian_forja.py` | Meta-módulo del arquitecto: scaffold, validación, impacto, edición, diagnóstico |
 
 ---
 

@@ -72,6 +72,7 @@ ABSORB_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_absorb.py"
 RAG_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_rag.py"
 WEB_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_web.py"
 BACKEND_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_backend.py"
+FORJA_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_forja.py"
 DEFAULT_WEB_PORT = 7878
 INSTALL_SCRIPT = GUARDIAN_DIR / "install.sh"
 
@@ -2680,6 +2681,19 @@ def cmd_web(args):
     except Exception as e:
         return err(f"Error: {e}")
 
+def cmd_forja(args):
+    if not args:
+        print("Uso: guardian forja <index|module|validate|impact|doctor|list|edit|rm|protect|run> [args...]")
+        return 1
+    cmd = [sys.executable, str(FORJA_SCRIPT)] + args
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {FORJA_SCRIPT}")
+    except Exception as e:
+        return err(f"Error: {e}")
+
 def cmd_stack(action, slug):
     config = _read_config(slug)
     if not config:
@@ -2757,6 +2771,7 @@ def main():
         print("  consolidate [slug]           Consolidar memoria + RAG")
         print("  memory <args>                Sistema de memoria persistente")
         print("  absorb <args>                Sistema de skills")
+        print("  forja <sub> [args]            La Forja: crear/validar/editar/eliminar módulos del core")
         print("  pr <sub> [args]              GitHub PR integration")
         print("  issue <sub> [args]           GitHub Issues integration")
         print("  projects <sub> [args]        Gestión multi-proyecto")
@@ -2923,6 +2938,9 @@ def main():
 
     if cmd == "web":
         return cmd_web(cmd_args)
+
+    if cmd == "forja":
+        return cmd_forja(cmd_args)
 
     if cmd == "pr":
         if not cmd_args:

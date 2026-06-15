@@ -218,6 +218,28 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
                     })
             return _json_response(self, 200, {"results": results})
 
+        if parsed.path == "/forja/index":
+            import guardian_forja
+            index = guardian_forja.scan_index()
+            return _json_response(self, 200, index)
+
+        if parsed.path == "/forja/list":
+            import guardian_forja
+            inventory = guardian_forja.list_inventory()
+            return _json_response(self, 200, inventory)
+
+        if parsed.path == "/forja/doctor":
+            import guardian_forja
+            result = guardian_forja.doctor_check()
+            return _json_response(self, 200, result)
+
+        if parsed.path == "/forja/validate":
+            slug = _project_slug(params)
+            mod = params.get("module", [""])[0]
+            import guardian_forja
+            result = guardian_forja.validate_module(mod)
+            return _json_response(self, 200, result)
+
         if parsed.path == "/mcp/tools":
             import guardian_mcp
             return _json_response(self, 200, {"tools": guardian_mcp.TOOLS})
@@ -340,6 +362,112 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
                 args["slug"] = slug
             guardian_mcp._handle_call(tool_name, args, "api")
             return _json_response(self, 200, {"ok": True})
+
+        if parsed.path == "/forja/module/new":
+            slug = _project_slug(params, body)
+            name = str(body.get("name", ""))
+            desc = str(body.get("desc", ""))
+            if not name:
+                return _json_response(self, 400, {"error": "name required"})
+            import guardian_forja
+            result = guardian_forja.module_new(name, desc)
+            return _json_response(self, 200 if result.get("ok") else 400, result)
+
+        if parsed.path == "/forja/rm":
+            slug = _project_slug(params, body)
+            mod = str(body.get("module", ""))
+            force = bool(body.get("force", False))
+            if not mod:
+                return _json_response(self, 400, {"error": "module required"})
+            import guardian_forja
+            result = guardian_forja.delete_module(mod, force=force)
+            return _json_response(self, 200 if result.get("ok") else 400, result)
+
+        if parsed.path == "/forja/edit":
+            slug = _project_slug(params, body)
+            file_path = str(body.get("file", ""))
+            content = body.get("content")
+            if not file_path:
+                return _json_response(self, 400, {"error": "file required"})
+            import guardian_forja
+            if content is not None:
+                result = guardian_forja.write_file_content(file_path, content)
+            else:
+                result = guardian_forja.edit_file(file_path)
+            return _json_response(self, 200 if result.get("ok") else 400, result)
+
+        if parsed.path == "/forja/run":
+            slug = _project_slug(params, body)
+            text = str(body.get("text", ""))
+            if not text:
+                return _json_response(self, 400, {"error": "text required"})
+            import guardian_forja
+            result = guardian_forja.run_direct(text)
+            return _json_response(self, 200, result)
+
+        if parsed.path == "/forja/protect":
+            slug = _project_slug(params, body)
+            mod = str(body.get("module", ""))
+            if not mod:
+                return _json_response(self, 400, {"error": "module required"})
+            import guardian_forja
+            result = guardian_forja.protect_module(mod)
+            return _json_response(self, 200 if result.get("ok") else 400, result)
+
+        if parsed.path == "/forja/endpoint":
+            slug = _project_slug(params, body)
+            method = str(body.get("method", "GET")).upper()
+            path = str(body.get("path", ""))
+            module = str(body.get("module", ""))
+            if not path:
+                return _json_response(self, 400, {"error": "path required"})
+            import guardian_forja
+            result = guardian_forja.cmd_endpoint(method, path, module)
+            return _json_response(self, 201 if result.get("ok") else 400, result)
+
+        if parsed.path == "/forja/mcp-tool":
+            slug = _project_slug(params, body)
+            name = str(body.get("name", ""))
+            module = str(body.get("module", ""))
+            if not name:
+                return _json_response(self, 400, {"error": "name required"})
+            import guardian_forja
+            result = guardian_forja.cmd_mcp_tool(name, module)
+            return _json_response(self, 201 if result.get("ok") else 400, result)
+
+        if parsed.path == "/forja/function":
+            slug = _project_slug(params, body)
+            func_name = str(body.get("function", ""))
+            register = body.get("register", False)
+            module = str(body.get("module", "guardian_forja"))
+            if not func_name:
+                return _json_response(self, 400, {"error": "function name required"})
+            import guardian_forja
+            result = guardian_forja.function_add(module, func_name, register=bool(register))
+            return _json_response(self, 201 if result.get("ok") else 400, result)
+
+        if parsed.path == "/forja/diff":
+            slug = _project_slug(params, body)
+            import guardian_forja
+            result = guardian_forja.diff_snapshot()
+            return _json_response(self, 200, result)
+
+        if parsed.path == "/forja/graph":
+            slug = _project_slug(params, body)
+            import guardian_forja
+            result = guardian_forja.graph_deps()
+            return _json_response(self, 200, result)
+
+        if parsed.path == "/forja/patch":
+            slug = _project_slug(params, body)
+            rel_path = str(body.get("file", ""))
+            old_text = str(body.get("old", ""))
+            new_text = str(body.get("new", ""))
+            if not rel_path or not old_text or not new_text:
+                return _json_response(self, 400, {"error": "file, old, and new required"})
+            import guardian_forja
+            result = guardian_forja.patch_file(rel_path, old_text, new_text)
+            return _json_response(self, 200 if result.get("ok") else 400, result)
 
         if parsed.path == "/activate":
             slug = _project_slug(params, body)

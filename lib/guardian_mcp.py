@@ -131,6 +131,130 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "forja_doctor",
+        "description": "Diagnóstico de salud del sistema Guardian",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "forja_validate",
+        "description": "Validar módulo contra convenciones de Guardian",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "module": {"type": "string", "description": "Nombre del módulo (opcional, valida todos si se omite)"},
+            },
+        },
+    },
+    {
+        "name": "forja_index",
+        "description": "Reconstruir el índice de auto-conocimiento de la Forja",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "forja_list",
+        "description": "Listar inventario de módulos, endpoints y MCP tools",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "forja_scaffold",
+        "description": "Scaffoldear nuevo módulo guardian_*.py",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Nombre del módulo (snake_case)"},
+                "desc": {"type": "string", "description": "Descripción breve"},
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "forja_endpoint",
+        "description": "Scaffoldear nuevo endpoint REST en guardian_backend.py",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "method": {"type": "string", "description": "GET o POST"},
+                "path": {"type": "string", "description": "Ruta del endpoint, ej: /api/health"},
+                "module": {"type": "string", "description": "Módulo backend asociado (opcional)"},
+            },
+            "required": ["method", "path"],
+        },
+    },
+    {
+        "name": "forja_mcp_tool",
+        "description": "Scaffoldear nueva tool MCP en guardian_mcp.py",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Nombre de la tool (snake_case)"},
+                "module": {"type": "string", "description": "Módulo Python asociado (opcional)"},
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "forja_function",
+        "description": "Agregar cmd_<name> a un módulo, opcionalmente registrándolo en dispatch",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "function": {"type": "string", "description": "Nombre de la función cmd_"},
+                "module": {"type": "string", "description": "Módulo destino (default: guardian_forja)"},
+                "register": {"type": "boolean", "description": "Registrar también en guardian.py dispatch"},
+            },
+            "required": ["function"],
+        },
+    },
+    {
+        "name": "forja_diff",
+        "description": "Snapshot diff del índice de auto-conocimiento",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "forja_graph",
+        "description": "Grafo ASCII de dependencias entre módulos Guardian",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "forja_patch",
+        "description": "Edición parcial find+replace en archivos del core",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file": {"type": "string", "description": "Ruta relativa al archivo (ej: guardian_forja.py)"},
+                "old": {"type": "string", "description": "Texto a reemplazar"},
+                "new": {"type": "string", "description": "Texto nuevo"},
+            },
+            "required": ["file", "old", "new"],
+        },
+    },
+    {
+        "name": "forja_run",
+        "description": "Interfaz directa: interpreta un pedido en lenguaje natural y ejecuta la acción correspondiente",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Pedido en lenguaje natural"},
+            },
+            "required": ["text"],
+        },
+    },
 ]
 
 
@@ -310,6 +434,93 @@ def _handle_call(tool_name, args, id_val):
             "confidence": conciencia_result.get("confidence"),
             "status": "ok",
         })
+
+    elif tool_name == "forja_doctor":
+        import guardian_forja
+        result = guardian_forja.doctor_check()
+        _respond(id_val, result)
+
+    elif tool_name == "forja_validate":
+        import guardian_forja
+        mod = args.get("module", "")
+        result = guardian_forja.validate_module(mod)
+        _respond(id_val, result)
+
+    elif tool_name == "forja_index":
+        import guardian_forja
+        result = guardian_forja.scan_index()
+        _respond(id_val, result)
+
+    elif tool_name == "forja_list":
+        import guardian_forja
+        result = guardian_forja.list_inventory()
+        _respond(id_val, result)
+
+    elif tool_name == "forja_scaffold":
+        import guardian_forja
+        name = args.get("name", "")
+        desc = args.get("desc", "")
+        result = guardian_forja.module_new(name, desc)
+        _respond(id_val, result)
+
+    elif tool_name == "forja_run":
+        import guardian_forja
+        text = args.get("text", "")
+        result = guardian_forja.run_direct(text)
+        _respond(id_val, result)
+
+    elif tool_name == "forja_endpoint":
+        import guardian_forja
+        method = args.get("method", "GET").upper()
+        path = args.get("path", "")
+        module = args.get("module", "")
+        if not path:
+            _respond(id_val, error={"code": -32602, "message": "path required"})
+            return
+        result = guardian_forja.cmd_endpoint(method, path, module)
+        _respond(id_val, result)
+
+    elif tool_name == "forja_mcp_tool":
+        import guardian_forja
+        name = args.get("name", "")
+        module = args.get("module", "")
+        if not name:
+            _respond(id_val, error={"code": -32602, "message": "name required"})
+            return
+        result = guardian_forja.cmd_mcp_tool(name, module)
+        _respond(id_val, result)
+
+    elif tool_name == "forja_function":
+        import guardian_forja
+        func_name = args.get("function", "")
+        module = args.get("module", "guardian_forja")
+        register = args.get("register", False)
+        if not func_name:
+            _respond(id_val, error={"code": -32602, "message": "function name required"})
+            return
+        result = guardian_forja.function_add(module, func_name, register=bool(register))
+        _respond(id_val, result)
+
+    elif tool_name == "forja_diff":
+        import guardian_forja
+        result = guardian_forja.diff_snapshot()
+        _respond(id_val, result)
+
+    elif tool_name == "forja_graph":
+        import guardian_forja
+        result = guardian_forja.graph_deps()
+        _respond(id_val, result)
+
+    elif tool_name == "forja_patch":
+        import guardian_forja
+        rel_path = args.get("file", "")
+        old_text = args.get("old", "")
+        new_text = args.get("new", "")
+        if not rel_path or not old_text or not new_text:
+            _respond(id_val, error={"code": -32602, "message": "file, old, and new required"})
+            return
+        result = guardian_forja.patch_file(rel_path, old_text, new_text)
+        _respond(id_val, result)
 
     else:
         _respond(id_val, error={"code": -32601, "message": f"Tool not found: {tool_name}"})
