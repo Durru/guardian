@@ -8,6 +8,8 @@ import guardian_shared as shared
 import guardian_genome
 
 
+VALID_MODES = ("read", "plan", "build", "commit", "review")
+
 DEFAULT_THRESHOLDS = {
     "assume": 0.8,
     "ask_little_floor": 0.5,
@@ -15,8 +17,19 @@ DEFAULT_THRESHOLDS = {
     "advisory": True,
     "plan_assume_bonus": -0.1,
     "build_assume_bonus": 0.1,
+    "read_assume_bonus": 0.0,
+    "commit_assume_bonus": 0.15,
+    "review_assume_bonus": 0.0,
 }
 THRESHOLD_KEYS = ["assume", "ask_little_floor", "ask_much_floor"]
+
+MODE_BONUS_KEY = {
+    "plan": "plan_assume_bonus",
+    "build": "build_assume_bonus",
+    "read": "read_assume_bonus",
+    "commit": "commit_assume_bonus",
+    "review": "review_assume_bonus",
+}
 
 
 def _conciencia_path(slug):
@@ -109,7 +122,8 @@ def score_context(payload):
     if query:
         signals.append(min(0.35, len(query) / 200.0))
     if isinstance(context, dict):
-        if context.get("mode") in ("plan", "build"):
+        mode = context.get("mode")
+        if mode in VALID_MODES:
             signals.append(0.1)
         if context.get("project_root"):
             signals.append(0.1)
@@ -117,10 +131,20 @@ def score_context(payload):
             signals.append(min(0.15, context.get("memory_count", 0) / 40.0))
         if context.get("relevant_skills_count"):
             signals.append(min(0.15, context.get("relevant_skills_count", 0) / 20.0))
+        if context.get("guardian_md_lines", 0) > 5:
+            signals.append(0.1)
+        if context.get("has_goal"):
+            signals.append(0.05)
+        if context.get("has_task"):
+            signals.append(0.05)
     results = rag.get("results") if isinstance(rag, dict) else []
     if isinstance(results, list) and results:
         top = max(float(item.get("score", 0.0)) for item in results[:5])
         signals.append(min(0.35, top))
+    brain_results = context.get("brain_results") if isinstance(context, dict) else None
+    if brain_results and isinstance(brain_results, list) and brain_results:
+        top_brain = brain_results[0].get("similarity", 0.5)
+        signals.append(min(0.2, top_brain))
     confidence = max(0.0, min(1.0, sum(signals)))
     return confidence
 
@@ -128,7 +152,10 @@ def score_context(payload):
 def consciousness_action(confidence, mode="plan", thresholds=None):
     if thresholds is None:
         thresholds = DEFAULT_THRESHOLDS
-    bonus = thresholds.get("build_assume_bonus" if mode == "build" else "plan_assume_bonus", 0)
+    if mode not in VALID_MODES:
+        mode = "plan"
+    bonus_key = MODE_BONUS_KEY[mode]
+    bonus = thresholds.get(bonus_key, 0)
     adj = round(confidence + bonus, 2)
     if adj >= thresholds.get("assume", 0.8):
         return "assume"
@@ -139,7 +166,41 @@ def consciousness_action(confidence, mode="plan", thresholds=None):
     return "investigate"
 
 
-def run_cycle(slug, question="", mode="plan", rag_results=None, context=None):
+def _load_brain_context(slug: str, mode: str, question: str = "") -> dict:
+    if not slug:
+        return {}
+    try:
+        import guardian_brain as brain
+        gmd = brain.read_guardian_md(slug)
+        gmd_lines = len(gmd.splitlines()) if gmd else 0
+        wm = brain.read_working_memory(slug)
+        brain_results = []
+        if question:
+            try:
+                orchestrated = brain.orchestrate(slug, question, top_k=3)
+                for level_nodes in orchestrated.get("results", {}).values():
+                    brain_results.extend(level_nodes)
+            except Exception:
+                pass
+        return {
+            "guardian_md_lines": gmd_lines,
+            "has_goal": bool(wm.get("goal")),
+            "has_task": bool(wm.get("task")),
+            "brain_results": brain_results,
+        }
+    except Exception:
+        return {}
+
+
+def run_cycle(slug, question="", mode="plan", rag_results=None, context=None, use_brain=True):
+    if mode not in VALID_MODES:
+        mode = "plan"
+    if use_brain and slug:
+        brain_ctx = _load_brain_context(slug, mode, question)
+        if brain_ctx:
+            merged = dict(context) if context else {}
+            merged.update(brain_ctx)
+            context = merged
     confidence = score_context({
         "question": question,
         "mode": mode,
@@ -158,21 +219,21 @@ def run_cycle(slug, question="", mode="plan", rag_results=None, context=None):
     }
     if rag_results:
         cycle["rag_results"] = rag_results[:5] if isinstance(rag_results, list) else []
+    if context:
+        slim = {k: v for k, v in context.items()
+                if k in ("guardian_md_lines", "has_goal", "has_task", "mode", "project_root")}
+        cycle["context_used"] = slim
     state.setdefault("cycles", []).append(cycle)
     state["cycles"] = state["cycles"][-50:]
     state["last_confidence"] = confidence
     state["last_action"] = action
     state["updated"] = shared.ts()
     write_state(slug, state)
-    # N2 auto
     meta = evolve(slug, state.get("cycles", []), thresholds)
     return {
-        "slug": slug,
-        "mode": mode,
+        "slug": slug, "mode": mode,
         "confidence": round(confidence, 3),
-        "action": action,
-        "state": state,
-        "meta": meta,
+        "action": action, "state": state, "meta": meta,
     }
 
 
@@ -246,6 +307,8 @@ def evolve(slug, cycles, thresholds):
 
 def quick_check(slug, path="", operation_type="edit", mode="plan", rag_results=None):
     """Fast permission check using score_context + consciousness_action — no LLM call."""
+    if mode not in VALID_MODES:
+        mode = "plan"
     confidence = score_context({
         "question": f"{operation_type}: {path}",
         "mode": mode,
@@ -255,13 +318,9 @@ def quick_check(slug, path="", operation_type="edit", mode="plan", rag_results=N
     thresholds = read_thresholds(slug)
     action = consciousness_action(confidence, mode, thresholds)
     return {
-        "slug": slug,
-        "path": path,
-        "operation": operation_type,
-        "mode": mode,
-        "confidence": round(confidence, 3),
-        "action": action,
-        "allowed": action in ("assume", "ask_little"),
+        "slug": slug, "path": path, "operation": operation_type,
+        "mode": mode, "confidence": round(confidence, 3),
+        "action": action, "allowed": action in ("assume", "ask_little"),
     }
 
 

@@ -1,0 +1,66 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, master, v3.x]
+  pull_request:
+    branches: [main, master, v3.x]
+
+jobs:
+  test:
+    name: Test on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show environment
+        run: |
+          python --version
+          uname -a
+
+      - name: Install PyYAML (optional)
+        run: |
+          python -m pip install --upgrade pip || true
+          pip install pyyaml || echo "PyYAML install failed (will use fallback)"
+
+      - name: Verify zero-deps
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, 'lib')
+          for m in list(sys.modules.keys()):
+              if m.startswith('guardian'):
+                  del sys.modules[m]
+          mods = [
+              'guardian_brain_schema', 'guardian_brain',
+              'guardian_knowledge', 'guardian_specialization', 'guardian_plan',
+              'guardian_maintain', 'guardian_global', 'guardian_capability',
+              'guardian_publish', 'guardian_lineage', 'guardian_brain_migration',
+              'guardian_conciencia', 'guardian_genome', 'guardian_evolution',
+              'guardian_absorb', 'guardian_forja',
+              'guardian_memory', 'guardian_rag',
+              'guardian_backend', 'guardian_mcp', 'guardian_web',
+              'guardian_shared', 'guardian',
+          ]
+          ok = 0
+          for m in mods:
+              try:
+                  __import__(m)
+                  ok += 1
+              except Exception as e:
+                  print(f'FAIL: {m}: {e}')
+          print(f'Imports OK: {ok}/{len(mods)}')
+          sys.exit(0 if ok == len(mods) else 1)
+          "
+
+      - name: Run tests
+        run: |
+          python -m unittest discover -s tests -p "test_*.py" -v

@@ -73,6 +73,17 @@ RAG_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_rag.py"
 WEB_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_web.py"
 BACKEND_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_backend.py"
 FORJA_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_forja.py"
+BRAIN_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_brain.py"
+BRAIN_SCHEMA_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_brain_schema.py"
+KNOWLEDGE_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_knowledge.py"
+SPECIALIZATION_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_specialization.py"
+PLAN_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_plan.py"
+MAINTAIN_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_maintain.py"
+GLOBAL_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_global.py"
+CAPABILITY_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_capability.py"
+PUBLISH_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_publish.py"
+LINEAGE_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_lineage.py"
+MIGRATION_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_brain_migration.py"
 DEFAULT_WEB_PORT = 7878
 INSTALL_SCRIPT = GUARDIAN_DIR / "install.sh"
 
@@ -2618,6 +2629,342 @@ def cmd_projects(subcmd, subargs):
 
     return 0
 
+# ── v3 commands: lifecycle, brain, think/remember/recall ─────────
+
+def _resolve_slug_or_pwd(args, positional_idx=0):
+    """Resolve a slug from args, or detect from PWD."""
+    if args and not args[positional_idx].startswith("-"):
+        return _slugify(args[positional_idx]), args[positional_idx + 1:]
+    slug = _find_slug()
+    if not slug:
+        print("  No se pudo detectar el proyecto. Especificá un slug o ejecutá 'guardian setup'.")
+        sys.exit(1)
+    return slug, args
+
+
+def cmd_brain(args):
+    """Dispatch to guardian_brain.py for all brain operations."""
+    if not args:
+        print("Uso: guardian brain <status|read|write|query|list|delete|count|gc|start|continue|end|reflect|orchestrate|guardian|regenerate-guardian|promote|auto-compact> [args...]")
+        return 1
+    cmd = [sys.executable, str(BRAIN_SCRIPT)] + args
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {BRAIN_SCRIPT}")
+    except Exception as e:
+        return err(f"Error: {e}")
+
+
+def _run_brain(subcommand, slug=None, *extra):
+    """Run a brain subcommand with consistent args."""
+    cmd = [sys.executable, str(BRAIN_SCRIPT), subcommand]
+    if slug:
+        cmd.append(slug)
+    cmd.extend(extra)
+    try:
+        return subprocess.run(cmd).returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {BRAIN_SCRIPT}")
+
+
+def cmd_start(args):
+    if not args:
+        slug = _find_slug()
+        if not slug:
+            print("  No se pudo detectar el proyecto. Especificá un slug.")
+            return 1
+        args = []
+    else:
+        slug = _slugify(args[0])
+        args = args[1:]
+    mode_args = [a for a in args if a.startswith("--mode=")]
+    return _run_brain("start", slug, *mode_args)
+
+
+def cmd_continue(args):
+    slug, _ = _resolve_slug_or_pwd(args)
+    return _run_brain("continue", slug)
+
+
+def cmd_end(args):
+    slug, _ = _resolve_slug_or_pwd(args)
+    return _run_brain("end", slug)
+
+
+def cmd_think(args):
+    if not args:
+        print("Uso: guardian think <pregunta> [slug]")
+        return 1
+    last = args[-1]
+    if not last.startswith("-") and " " not in last and _find_slug() != _slugify(last) and _is_known_slug(last):
+        slug = _slugify(last)
+        question = " ".join(args[:-1])
+    else:
+        slug = _find_slug()
+        question = " ".join(args)
+    if not slug:
+        print("  No se pudo detectar el proyecto. Pasá un slug explícito.")
+        return 1
+    import guardian_brain as brain_mod
+    import guardian_conciencia as con
+    try:
+        result = con.run_cycle(slug, question, mode="plan")
+        action_labels = {
+            "assume": "✓ Asumir (confío lo suficiente)",
+            "ask_little": "? Confirmar algo puntual",
+            "ask_much": "? Necesito más contexto",
+            "investigate": "🔍 Investigar primero",
+        }
+        print(f"\n  🤔 Pensando sobre: \"{question}\"")
+        print(f"\n  Modo: plan")
+        print(f"  Confianza: {result['confidence']:.2f}")
+        print(f"  Decisión: {action_labels.get(result['action'], result['action'])}")
+        return 0
+    except Exception as e:
+        return err(f"Error: {e}")
+
+
+def _is_known_slug(s):
+    if not s or len(s) > 64:
+        return False
+    import re
+    return bool(re.match(r'^[a-z0-9-]+$', s))
+
+
+def cmd_remember(args):
+    if not args:
+        print("Uso: guardian remember <contenido> [--level=semantic] [--kind=note] [--importance=0.5] [slug]")
+        return 1
+    flags = {}
+    positional = []
+    for arg in args:
+        if arg.startswith("--"):
+            k, _, v = arg[2:].partition("=")
+            flags[k] = v if v else True
+        else:
+            positional.append(arg)
+    slug = None
+    content_parts = []
+    for p in positional:
+        if slug is None and _is_known_slug(p) and len(positional) > 1:
+            slug = _slugify(p)
+        else:
+            content_parts.append(p)
+    content = " ".join(content_parts)
+    if not content:
+        print("  Falta el contenido a recordar.")
+        return 1
+    if not slug:
+        slug = _find_slug()
+    if not slug:
+        print("  No se pudo detectar el proyecto.")
+        return 1
+    level = flags.get("level", "semantic")
+    kind = flags.get("kind", "note")
+    importance = float(flags.get("importance", 0.6))
+    import guardian_brain as brain_mod
+    node = {"kind": kind, "content": content, "importance": importance}
+    if "tags" in flags:
+        node["tags"] = str(flags["tags"]).split(",")
+    try:
+        result = brain_mod.write_governed(slug, level, node)
+        if result.get("ok"):
+            print(f"  ✓ Guardado ({result.get('action', '?')}): {content[:60]}")
+            return 0
+        else:
+            print(f"  ⚠ No se guardó: {result.get('reason', 'razón desconocida')}")
+            return 1
+    except Exception as e:
+        return err(f"Error: {e}")
+
+
+def cmd_recall(args):
+    if not args:
+        print("Uso: guardian recall <pregunta> [slug]")
+        return 1
+    last = args[-1]
+    if len(args) > 1 and _is_known_slug(last) and _slugify(last) != _find_slug():
+        slug = _slugify(last)
+        question = " ".join(args[:-1])
+    else:
+        slug = _find_slug()
+        question = " ".join(args)
+    if not slug:
+        print("  No se pudo detectar el proyecto.")
+        return 1
+    import guardian_brain as brain_mod
+    try:
+        result = brain_mod.orchestrate(slug, question, top_k=3)
+        print(f"\n  🔍 Recordando: \"{question}\"")
+        print(f"  Niveles consultados: {', '.join(result['levels_queried'])}")
+        found = False
+        for level, nodes in result["results"].items():
+            if not nodes:
+                continue
+            found = True
+            print(f"\n  [{level}]")
+            for n in nodes:
+                sim = n.get("similarity", 0)
+                print(f"    {sim:.2f} {n['content'][:80]}")
+        if not found:
+            print("  No encontré nada relevante en la memoria del proyecto.")
+        return 0
+    except Exception as e:
+        return err(f"Error: {e}")
+
+
+def cmd_reflect(args):
+    slug, _ = _resolve_slug_or_pwd(args)
+    return _run_brain("reflect", slug)
+
+
+def cmd_knowledge(args):
+    if not args:
+        print("Uso: guardian knowledge <research|refresh|scrape|stale|list|show|write> [args...]")
+        return 1
+    cmd = [sys.executable, str(KNOWLEDGE_SCRIPT)] + args
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {KNOWLEDGE_SCRIPT}")
+
+
+def cmd_specialization(args):
+    if not args:
+        print("Uso: guardian specialization <list|show|enable|disable|install|detect> [args...]")
+        return 1
+    cmd = [sys.executable, str(SPECIALIZATION_SCRIPT)] + args
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {SPECIALIZATION_SCRIPT}")
+
+
+def cmd_plan(args):
+    if not args:
+        print("Uso: guardian plan <new|list|show|specify|design|tasks|apply|verify|archive> [args...]")
+        return 1
+    cmd = [sys.executable, str(PLAN_SCRIPT)] + args
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {PLAN_SCRIPT}")
+
+
+def cmd_maintain(args):
+    if not args:
+        print("Uso: guardian maintain <report> [slug] [--project-root=PATH]")
+        return 1
+    if args[0] == "report":
+        cmd_args = args[1:]
+    else:
+        cmd_args = args
+    cmd = [sys.executable, str(MAINTAIN_SCRIPT), "report"] + cmd_args
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {MAINTAIN_SCRIPT}")
+
+
+def cmd_global(args):
+    if not args:
+        print("Uso: guardian global <status|read|search|promote|stacks|user> [args...]")
+        return 1
+    cmd = [sys.executable, str(GLOBAL_SCRIPT)] + args
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {GLOBAL_SCRIPT}")
+
+
+def cmd_capability(args):
+    if not args:
+        print("Uso: guardian capability <status|measure|benchmark|routing|history> [args...]")
+        return 1
+    cmd = [sys.executable, str(CAPABILITY_SCRIPT)] + args
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {CAPABILITY_SCRIPT}")
+
+
+def cmd_publish(args):
+    if not args:
+        print("Uso: guardian publish <slug> [--to=template|production] [--version=X.Y.Z]")
+        return 1
+    cmd = [sys.executable, str(PUBLISH_SCRIPT)] + args
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {PUBLISH_SCRIPT}")
+
+
+def cmd_templates(args):
+    if not args:
+        print("Uso: guardian templates <list|show|export|import> [args...]")
+        return 1
+    cmd = [sys.executable, str(PUBLISH_SCRIPT), "templates"] + args
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {PUBLISH_SCRIPT}")
+
+
+def cmd_clone(args):
+    if len(args) < 2:
+        print("Uso: guardian clone <template-slug> <new-slug>")
+        return 1
+    cmd = [sys.executable, str(PUBLISH_SCRIPT), "clone", args[0], args[1]]
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {PUBLISH_SCRIPT}")
+
+
+def cmd_fork(args):
+    if len(args) < 2:
+        print("Uso: guardian fork <parent-slug> <child-slug>")
+        return 1
+    cmd = [sys.executable, str(PUBLISH_SCRIPT), "fork", args[0], args[1]]
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {PUBLISH_SCRIPT}")
+
+
+def cmd_lineage(args):
+    cmd = [sys.executable, str(LINEAGE_SCRIPT)] + (args or ["show"])
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {LINEAGE_SCRIPT}")
+
+
+def cmd_migrate(args):
+    if not args:
+        print("Uso: guardian migrate <status|migrate|rollback> <slug>")
+        return 1
+    cmd = [sys.executable, str(MIGRATION_SCRIPT)] + args
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode
+    except FileNotFoundError:
+        return err(f"No se encontró: {MIGRATION_SCRIPT}")
+
+
 # ── cmd_memory, cmd_absorb, cmd_stack ───────────────────────────
 
 def cmd_memory(args):
@@ -2776,6 +3123,28 @@ def main():
         print("  issue <sub> [args]           GitHub Issues integration")
         print("  projects <sub> [args]        Gestión multi-proyecto")
         print()
+        print("Guardian v3 (Cognitive Memory):")
+        print("  start [slug] [--mode=read|plan|build|commit|review]   Iniciar sesión")
+        print("  continue [slug]                                       Retomar sesión")
+        print("  end [slug]                                            Cerrar sesión")
+        print("  think <pregunta> [slug]                               Conciencia N1")
+        print("  remember <contenido> [--level=X] [--kind=Y] [slug]   Guardar en memoria")
+        print("  recall <pregunta> [slug]                              Consultar memoria")
+        print("  reflect [slug]                                        Disparar reflexión")
+        print("  brain <sub> [args]                                    Acceso directo al cerebro")
+        print("  knowledge <sub> [args]                                Knowledge packs (research/refresh/scrape)")
+        print("  specialization <sub> [args]                            Specializations por stack")
+        print("  plan <sub> [args]                                      Planes (OpenSpec + ad-hoc)")
+        print("  maintain [slug]                                        Diagnóstico + drift detection")
+        print("  global <sub> [args]                                    Memoria global compartida")
+        print("  capability <sub> [args]                                Model card + routing")
+        print("  publish <slug> [--to=template] [--version=X]            Publicar template")
+        print("  templates <list|show|export|import>                     Gestionar templates")
+        print("  clone <template> <new>                                 Clonar desde template")
+        print("  fork <parent> <child>                                  Fork con linaje")
+        print("  lineage <slug>                                          Ver árbol genealógico")
+        print("  migrate <status|migrate|rollback> <slug>                Migrar v2 → v3")
+        print()
         print("Stack:")
         print("  build|dev|test|lint|typecheck|deploy|logs [slug]")
         return 0
@@ -2868,8 +3237,7 @@ def main():
         return cmd_backend(cmd_args)
 
     if cmd == "knowledge":
-        slug, rest = _resolve_slug(cmd_args)
-        return cmd_knowledge(slug, rest)
+        return cmd_knowledge(cmd_args)
 
     if cmd == "conciencia":
         slug, rest = _resolve_slug(cmd_args)
@@ -2926,6 +3294,50 @@ def main():
             return cmd_post_deploy(slug, auto=auto)
 
     # ── subcommands that delegate ──
+
+    # ── v3: lifecycle, brain, conciencia ──
+    if cmd == "start":
+        return cmd_start(cmd_args)
+    if cmd in ("continue", "resume"):
+        return cmd_continue(cmd_args)
+    if cmd in ("end", "close", "finish"):
+        return cmd_end(cmd_args)
+    if cmd == "think":
+        return cmd_think(cmd_args)
+    if cmd in ("remember", "note"):
+        return cmd_remember(cmd_args)
+    if cmd in ("recall", "ask"):
+        return cmd_recall(cmd_args)
+    if cmd == "reflect":
+        return cmd_reflect(cmd_args)
+    if cmd == "brain":
+        return cmd_brain(cmd_args)
+    # ── v3: knowledge, specialization, plan, maintain ──
+    if cmd == "knowledge":
+        return cmd_knowledge(cmd_args)
+    if cmd == "specialization":
+        return cmd_specialization(cmd_args)
+    if cmd == "plan":
+        return cmd_plan(cmd_args)
+    if cmd == "maintain":
+        return cmd_maintain(cmd_args)
+    # ── v3: global, capability, publish, templates, clone, fork, lineage, migrate ──
+    if cmd == "global":
+        return cmd_global(cmd_args)
+    if cmd == "capability":
+        return cmd_capability(cmd_args)
+    if cmd == "publish":
+        return cmd_publish(cmd_args)
+    if cmd == "templates":
+        return cmd_templates(cmd_args)
+    if cmd == "clone":
+        return cmd_clone(cmd_args)
+    if cmd == "fork":
+        return cmd_fork(cmd_args)
+    if cmd == "lineage":
+        return cmd_lineage(cmd_args)
+    if cmd == "migrate":
+        return cmd_migrate(cmd_args)
 
     if cmd == "memory":
         return cmd_memory(cmd_args)

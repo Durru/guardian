@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nexxoria-guardian"
+version = "3.0.0"
+description = "Cognitive project ecosystem for OpenCode — 5-level memory architecture, zero external deps."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Nexxoria", email = "guardian@nexxoria.io"},
+]
+keywords = [
+    "opencode",
+    "agent",
+    "memory",
+    "rag",
+    "cognitive",
+    "llm",
+    "zero-deps",
+    "sqlite",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+# Zero external runtime dependencies!
+[project.optional-dependencies]
+yaml = ["PyYAML>=5.0"]
+test = ["pytest>=7.0"]
+lint = ["ruff>=0.1.0"]
+
+[project.urls]
+Homepage = "https://github.com/Durru/guardian"
+Repository = "https://github.com/Durru/guardian.git"
+Issues = "https://github.com/Durru/guardian/issues"
+
+[project.scripts]
+guardian = "lib.guardian:main"
+
+[tool.setuptools]
+packages = ["lib"]
+include-package-data = true
+zip-safe = false
