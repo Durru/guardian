@@ -199,7 +199,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
   const slug = slugDir(directory)
 
   // Refresh current mode on load
-  try { currentMode = guardian("mode", "status") || "plan" } catch { /* ignore */ }
+  try { currentMode = guardian("mode", slug, "status") || "plan" } catch { /* ignore */ }
 
   // Auto-start backend in background (don't block plugin init)
   ensureBackend().catch(() => {})
@@ -210,7 +210,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         description: "Show Guardian genome, branch, and current mode status",
         args: {},
         async execute(_args: any, _ctx: any) {
-          const out = guardian("mode", "status")
+          const out = guardian("mode", slug, "status")
           return { status: out || "plan (default)", slug }
         },
       },
@@ -222,7 +222,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           mode: { type: "string", enum: ["plan", "build"], description: "Override mode for the cycle" },
         },
         async execute(args: any) {
-          const cmdArgs = ["conciencia", "cycle", slug]
+          const cmdArgs = ["conciencia", slug, "cycle"]
           if (args.question) cmdArgs.push(args.question)
           const result = guardian(...cmdArgs)
           invalidateCache()
@@ -237,7 +237,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           top_k: { type: "number", description: "Results count (default: 5)" },
         },
         async execute(args: any) {
-          const cmdArgs = ["knowledge", "search", slug, args.query]
+          const cmdArgs = ["rag", args.query, "--slug", slug]
           if (args.top_k) cmdArgs.push("--top-k", String(args.top_k))
           const result = guardian(...cmdArgs)
           return { query: args.query, result }
@@ -252,11 +252,11 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
         async execute(args: any) {
           if (!args.mode) {
-            const out = guardian("mode", "status")
+          const out = guardian("mode", slug, "status")
             return { mode: out || "plan" }
           }
           const reason = args.reason || "via OpenCode plugin"
-          guardian("mode", args.mode, reason)
+          guardian("mode", slug, args.mode, reason)
           currentMode = args.mode
           invalidateCache()
           return { mode: args.mode, switched: true, reason }
@@ -354,7 +354,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
 
     "session.created": async (_input: any, output: any) => {
       try {
-        currentMode = guardian("mode", "status") || "plan"
+        currentMode = guardian("mode", slug, "status") || "plan"
         output.context = output.context || []
         const modLines = moduleContextLines()
 
@@ -389,7 +389,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
 
     "experimental.session.compacting": async (_input: any, output: any) => {
       try {
-        currentMode = guardian("mode", "status") || "plan"
+        currentMode = guardian("mode", slug, "status") || "plan"
         output.context = output.context || []
         output.context.push(
           `Guardian v2 active for \`${slug}\`. Mode: **${currentMode.trim()}**. ` +
@@ -408,11 +408,11 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
       const planScore = planKw.filter(k => t.includes(k)).length
       const buildScore = buildKw.filter(k => t.includes(k)).length
       if (planScore > buildScore && planScore >= 2) {
-        guardian("mode", "plan", "auto: prompt keywords")
+        guardian("mode", slug, "plan", "auto: prompt keywords")
         currentMode = "plan"
         invalidateCache()
       } else if (buildScore > planScore && buildScore >= 2) {
-        guardian("mode", "build", "auto: prompt keywords")
+        guardian("mode", slug, "build", "auto: prompt keywords")
         currentMode = "build"
         invalidateCache()
       }

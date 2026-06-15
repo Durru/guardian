@@ -1930,6 +1930,31 @@ def cmd_knowledge(slug, cmd_args):
     index = shared.read_knowledge_index(slug)
     tomes_dir = shared.MEMORY_DIR / slug / "knowledge" / "tomes"
 
+    if not cmd_args or cmd_args[0] == "status":
+        _sep(_("📚 Conocimiento: {slug}", slug=slug))
+        print(_("  Tomos:       {n}", n=len(index.get("tomes", []))))
+        print(_("  Actualizado: {updated}", updated=index.get("updated", "—")))
+        return 0
+
+    sub = cmd_args[0]
+    if sub == "tomes":
+        if not tomes_dir.exists():
+            print("  No hay tomos todavía.")
+            return 0
+        _sep(_("📚 Tomos: {slug}", slug=slug))
+        for path in sorted(tomes_dir.glob("*")):
+            if path.is_file():
+                print(_("  • {name}", name=path.name))
+        return 0
+
+    if sub == "search":
+        if len(cmd_args) < 2:
+            return err("Uso: guardian knowledge search <slug> <query>")
+        query = " ".join(cmd_args[1:])
+        return cmd_rag([query, "--slug", slug, "--top-k", "5", "--source", "knowledge", "--json"])
+
+    return err("Uso: guardian knowledge <status|tomes|search> [slug] [args...]")
+
 
 # ── cmd_conciencia ─────────────────────────────────────────────
 
@@ -2269,32 +2294,6 @@ def cmd_consolidate(slug, cmd_args):
     if learn:
         print(_("  📚 Learnings: {before} → {after}", **learn))
     return 0
-
-
-    if not cmd_args or cmd_args[0] == "status":
-        _sep(_("📚 Conocimiento: {slug}", slug=slug))
-        print(_("  Tomos:       {n}", n=len(index.get("tomes", []))))
-        print(_("  Actualizado: {updated}", updated=index.get("updated", "—")))
-        return 0
-
-    sub = cmd_args[0]
-    if sub == "tomes":
-        if not tomes_dir.exists():
-            print("  No hay tomos todavía.")
-            return 0
-        _sep(_("📚 Tomos: {slug}", slug=slug))
-        for path in sorted(tomes_dir.glob("*")):
-            if path.is_file():
-                print(_("  • {name}", name=path.name))
-        return 0
-
-    if sub == "search":
-        if len(cmd_args) < 2:
-            return err("Uso: guardian knowledge search <slug> <query>")
-        query = " ".join(cmd_args[1:])
-        return cmd_rag([query, "--slug", slug, "--top-k", "5", "--source", "knowledge", "--json"])
-
-    return err("Uso: guardian knowledge <status|tomes|search>")
 
 # ── cmd_pr ──────────────────────────────────────────────────────
 
