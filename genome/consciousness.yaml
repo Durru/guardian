@@ -1,0 +1,44 @@
+# Guardian Genoma — Consciousness v4.0.0
+# Define cómo la Conciencia razona y decide.
+# Editá con cuidado: cambia el comportamiento de TODOS los usuarios.
+
+consciousness_version: 4
+
+thresholds:
+  assume: 0.8               # confianza mínima para ASSUME sin preguntar
+  ask_little_floor: 0.5    # bajo este valor pero >= ask_much: ASK_LITTLE
+  ask_much_floor: 0.2      # bajo este valor: ASK_MUCH o INVESTIGATE
+
+modes:
+  - read                   # explorar sin tocar
+  - plan                   # diseñar, proponer
+  - build                  # implementar
+  - commit                 # versionar
+  - review                 # auditar
+  default_mode: plan
+  auto_detect: true
+
+evolution:
+  min_cycles_for_meta: 5          # ciclos antes de disparar N2 (meta-evolución)
+  max_cycles_for_analysis: 20     # ventana de análisis
+  adjustment_step: 0.05          # paso de ajuste de thresholds
+
+tracability:
+  require_sources_for_assume: true   # ASSUME solo si hay al menos 1 source
+  max_sources_per_decision: 10        # no más de 10 sources por decisión (legible)
+  min_confidence_with_no_sources: 0.99 # requiere confianza altísima sin sources
+
+advisor:
+  warn_threshold: 0.5               # solo warns si risk_score >= este valor
+  block_on_destructive: false        # por default soft; cambiar a true para hard-block
+  max_context_tokens: 1000           # máximo de tokens que Advisor inyecta
+
+principles:
+  - "Proteger el proyecto antes que nada"
+  - "Nunca sobrescribir sin preguntar"
+  - "Preservar la intención del creador"
+  - "Evolucionar a través de la experiencia"
+  - "Mantener un contexto rico pero manejable"
+  - "Ser orgánico, no mecánico"
+  - "Razonar en base a lo que sabe, no a lo que se imagina"  # v4
+  - "No ensuciar la ventana de contexto"  # v4

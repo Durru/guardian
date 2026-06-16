@@ -1,0 +1,64 @@
+# Guardian Genoma — Schema v4.0.0
+# Define el esquema del brain. Vos lo editás cuando agregás features.
+# Si cambiás esto, los usuarios con `guardian update` migran su rama.
+
+schema_version: 4
+
+brain:
+  levels:
+    - semantic       # SM: conocimiento estable
+    - episodic       # EM: eventos con timestamp
+    - procedural     # PM: workflows, patterns
+    - reflection     # RM: lecciones aprendidas
+  global_levels:
+    - semantic_global
+    - procedural_global
+    - reflection_global
+  extended_levels:
+    - codegraph_symbols    # SM.symbols: AST indexado (codegraph.sqlite)
+    - codegraph_edges      # SM.symbols.edges: relaciones entre símbolos
+    - prompt_log           # EM.prompts: cada prompt del usuario + razón
+    - decision_log         # EM.decisions: decisiones técnicas del LLM
+    - stack_history         # EM.stack_history: cambios de stack a lo largo del tiempo
+    - test_results          # EM.test_results: resultados de tests + baseline
+    - event_log             # EM.events: log crudo de eventos (rotado)
+
+codegraph:
+  enabled: true
+  languages:
+    - python
+    - typescript
+    - javascript
+    - go
+  index_on_activate: true   # indexa en `guardian activate` (full o incremental)
+  incremental_mtime_threshold: 1.0   # segundos desde último mtime para re-indexar
+
+observer:
+  enabled: true
+  auto_save_prompts: true   # log de prompts del usuario
+  auto_save_decisions: true
+  auto_save_test_results: true
+  auto_save_stack_changes: true
+  secret_sanitization: true
+  max_event_log_mb: 100     # rota cuando pasa de este tamaño
+
+advisor:
+  enabled: true
+  max_context_tokens: 1000
+  warn_threshold: 0.5       # solo warns si risk >= este valor
+  inject_on_session_created: true
+  inject_on_tool_before: true
+  inject_on_chat_message: true
+
+consciousness:
+  thresholds:
+    assume: 0.8
+    ask_little_floor: 0.5
+    ask_much_floor: 0.2
+  evolution:
+    min_cycles_for_meta: 5
+    max_cycles_for_analysis: 20
+    adjustment_step: 0.05
+  modes:
+    default_mode: plan
+    auto_detect: true

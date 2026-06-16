@@ -535,48 +535,52 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
       try {
         currentMode = guardian("mode", slug, "status") || "plan"
         output.context = output.context || []
-        const modLines = moduleContextLines()
 
-        output.context.push([
-          `## Guardian Context`,
-          `Guardian v3 is active. Current mode: **${currentMode.trim()}**`,
-          `Project slug: \`${slug}\``,
-          ``,
-          `### Module Permissions`,
-          ...modLines,
-          ``,
-          `**How it works:** When the agent operates on a guarded module, Guardian checks with conciencia.`,
-          `If conciencia confidence is low, the operation is blocked. Absorb skills to improve confidence.`,
-          ``,
-          `### Available Tools`,
-          `- \`guardian_status\` — genome, branch, mode`,
-          `- \`guardian_conciencia\` — run consciousness cycle (N1+N2)`,
-          `- \`guardian_rag\` — search knowledge base`,
-          `- \`guardian_mode\` — switch plan/build/commit/review/read mode`,
-          `- \`guardian_check_permission\` — check if an operation is allowed`,
-          `- \`guardian_why_blocked\` — explain why a path is blocked`,
-          ``,
-          `### v3 Cognitive Memory Tools`,
-          `- \`guardian_brain_read\` — read GUARDIAN.md (always-loaded)`,
-          `- \`guardian_brain_query\` — vector search in semantic/episodic/procedural/reflection`,
-          `- \`guardian_brain_write\` — write a node (passes through Governor)`,
-          `- \`guardian_brain_reflect\` — trigger reflection agent`,
-          `- \`guardian_session_end\` — end session: reflect + GUARDIAN.md regen`,
-          `- \`guardian_knowledge_research\` — research with TTL`,
-          `- \`guardian_specialization_enable\` — activate odoo/nextjs/fastapi/postgres/python`,
-          `- \`guardian_maintain\` — health report (drift, stale)`,
-          `- \`guardian_publish\` — publish as sanitized template`,
-          `- \`guardian_clone\` — clone from template`,
-          `- \`guardian_capability_status\` — read model card`,
-          `- \`guardian_capability_routing\` — LLM delegation decision`,
-          `- \`guardian_compact_now\` — auto-compact brain`,
-          ``,
-          `Use \`guardian_check_permission\` BEFORE editing a guarded file.`,
-          `Use \`guardian_why_blocked\` to understand and resolve blocks.`,
-          `Use \`guardian_conciencia\` to seed conciencia for a new task.`,
-          `Use \`guardian_brain_read\` FIRST in any new session (the 200-line working memory).`,
-          `Absorb skills with: \`guardian absorb scan && guardian absorb match ${slug}\``,
-        ].join("\n"))
+        // v4: Advisor builds dynamic context (5-15 lines vs 30 fixed)
+        // Returns "" if nothing relevant: doesn't pollute the context window
+        const advisorCtx = guardian(
+          "brain", "advisor-context", slug, ""
+        )
+        if (advisorCtx) {
+          output.context.push("## Guardian\n" + advisorCtx)
+        }
+        // Compact tools list (one line) so the LLM knows what exists
+        output.context.push("Guardian tools: guardian_status, guardian_conciencia, guardian_rag, guardian_mode, guardian_brain_read, guardian_brain_query, guardian_brain_write, guardian_brain_reflect, guardian_session_end, guardian_query_smart, guardian_knowledge_research, guardian_specialization_enable, guardian_maintain, guardian_publish, guardian_capability_status, guardian_compact_now, guardian_check_permission, guardian_why_blocked")
+      } catch {
+        // silent
+      }
+    },
+
+    // v4: chat.message hook — log user prompts
+    "chat.message": async (input: any, _ctx: any) => {
+      try {
+        guardian("observer", "log-prompt", slug, input.content || "", "--mode=build")
+      } catch {
+        // silent
+      }
+    },
+
+    // v4: tool.execute.before — advisor warns if action is risky
+    "tool.execute.before": async (input: any, output: any) => {
+      try {
+        const warn = guardian(
+          "advisor", "warn-action", slug,
+          input.tool || "", input.args || "", input.file || ""
+        )
+        if (warn) {
+          output.context = output.context || []
+          output.context.push("⚠ " + warn)
+        }
+      } catch {
+        // silent
+      }
+    },
+
+    // v4: tool.execute.after — observer routes the event
+    "tool.execute.after": async (input: any, _output: any) => {
+      try {
+        guardian("observer", "route", slug, input.tool || "",
+                 JSON.stringify(input.args || {}), JSON.stringify(_output || {}))
       } catch {
         // silent
       }

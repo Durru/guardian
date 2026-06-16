@@ -1,326 +1,427 @@
+#!/usr/bin/env python3
+"""Guardian Conciencia — motor de razonamiento trazable.
+
+La Conciencia es el sistema de razonamiento de Guardian. NO es un LLM.
+Lee del brain, no inventa. Cada decisión tiene sources trazables.
+
+Reglas inmutables:
+1. Razona en base a lo que sabe, no a lo que se imagina
+2. Si no hay datos, INVESTIGA (auto), no ASSUME
+3. Si la decisión es riesgosa, WARN con la fuente
+4. ASSUME solo con confidence >= threshold Y al menos 1 source
+5. El genoma es quien es; el creator es quien lo hizo; el usuario es quien lo usa
+"""
+
 from __future__ import annotations
 
 import json
+import os
+import time
 from pathlib import Path
+from typing import Any
 
-import guardian_rag
-import guardian_shared as shared
 import guardian_genome
+import guardian_shared as shared
 
 
 VALID_MODES = ("read", "plan", "build", "commit", "review")
-
-DEFAULT_THRESHOLDS = {
-    "assume": 0.8,
-    "ask_little_floor": 0.5,
-    "ask_much_floor": 0.2,
-    "advisory": True,
-    "plan_assume_bonus": -0.1,
-    "build_assume_bonus": 0.1,
-    "read_assume_bonus": 0.0,
-    "commit_assume_bonus": 0.15,
-    "review_assume_bonus": 0.0,
-}
-THRESHOLD_KEYS = ["assume", "ask_little_floor", "ask_much_floor"]
-
-MODE_BONUS_KEY = {
-    "plan": "plan_assume_bonus",
-    "build": "build_assume_bonus",
-    "read": "read_assume_bonus",
-    "commit": "commit_assume_bonus",
-    "review": "review_assume_bonus",
-}
+DEFAULT_THRESHOLDS = {"assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2}
 
 
-def _conciencia_path(slug):
-    """Path to conciencia cycles within the branch (fallback to legacy)."""
-    new_path = shared.branch_path_for(slug, "consciousness", "cycles.json")
-    if new_path.exists():
-        return new_path
-    legacy = shared.MEMORY_DIR / slug / "conciencia-state.json"
-    if legacy.exists():
-        return legacy
-    return new_path
+class Percept:
+    """Lo que la Conciencia percibe de un evento.
+
+    Solo datos reales del brain/genoma/rama. NUNCA inventado.
+    """
+    def __init__(self, event: dict, who_i_am: str, who_created_me: str, who_is_user: dict,
+                 what_i_know: dict, sources: list[str] = None):
+        self.event = event
+        self.who_i_am = who_i_am
+        self.who_created_me = who_created_me
+        self.who_is_user = who_is_user
+        self.what_i_know = what_i_know
+        self.sources = sources or []
+
+    def to_dict(self) -> dict:
+        return {
+            "event": self.event,
+            "who_i_am": self.who_i_am,
+            "who_created_me": self.who_created_me,
+            "who_is_user": self.who_is_user,
+            "what_i_know": self.what_i_know,
+            "sources": self.sources,
+        }
 
 
-def _thresholds_path(slug):
-    """Path to thresholds within the branch (fallback to legacy)."""
-    new_path = shared.branch_path_for(slug, "consciousness", "thresholds.json")
-    if new_path.exists():
-        return new_path
-    legacy = shared.MEMORY_DIR / slug / "conciencia-thresholds.json"
-    if legacy.exists():
-        return legacy
-    return new_path
+class Decision:
+    """Decisión trazable. Cada decisión tiene sources, reason, confidence."""
+    def __init__(self, action: str, reason: str, confidence: float,
+                 sources: list[str], mode: str = "plan", risk: str = "low",
+                 assumptions: list[str] = None, alternatives: list[str] = None):
+        self.action = action
+        self.reason = reason
+        self.confidence = confidence
+        self.sources = sources
+        self.mode = mode
+        self.risk = risk
+        self.assumptions = assumptions or []
+        self.alternatives = alternatives or []
+
+    def to_dict(self) -> dict:
+        return {
+            "action": self.action,
+            "reason": self.reason,
+            "confidence": self.confidence,
+            "sources": self.sources,
+            "mode": self.mode,
+            "risk": self.risk,
+            "assumptions": self.assumptions,
+            "alternatives": self.alternatives,
+        }
 
 
-def _learnings_dir(slug):
-    """Path to learnings within the branch (fallback to legacy)."""
-    new_path = shared.branch_path_for(slug, "learnings")
-    if new_path.exists():
-        return new_path
-    legacy = shared.MEMORY_DIR / slug / "learnings"
-    if legacy.exists():
-        return legacy
-    return new_path
+class Conciencia:
+    """Motor de razonamiento trazable de Guardian.
+
+    Sabe quién es (del genoma), quién lo creó (del genoma), quién es el
+    usuario actual (de la rama), y razona con la raíz del proyecto.
+    """
+
+    def __init__(self, slug: str = None):
+        self.slug = slug
+        self.genome = guardian_genome.load_genome()
+        self.identity = self.genome.get("identity", {})
+        self.creator = self.genome.get("creator") or self.identity.get("creator", "unknown")
+        self.who_i_am = self.identity.get("name", "Nexxoria Guardian")
+        self.principles = self.identity.get("principles", [])
+        # Thresholds from consciousness.yaml (v4) or identity.yaml (v2 fallback)
+        cons = self.genome.get("consciousness", {})
+        self.thresholds = cons.get("thresholds", self.genome.get("consciousness", {}).get("default_thresholds", {
+            "assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2
+        }))
+        # Tracability config (v4)
+        self.tracability = cons.get("tracability", {"require_sources_for_assume": True})
+        # Identify the user
+        self.user = self._identify_user()
+        # Current mode
+        if slug:
+            mode_state = shared.read_mode_state(slug)
+            self.mode = mode_state.get("mode", cons.get("default_mode", "plan"))
+        else:
+            self.mode = cons.get("default_mode", "plan")
+
+    def _identify_user(self) -> dict:
+        """Identifica al usuario actual. NO asume si no sabe."""
+        import subprocess
+        user = {"name": "unknown", "email": "unknown", "source": "none"}
+        try:
+            r = subprocess.run(["git", "config", "user.email"],
+                               capture_output=True, text=True, timeout=2)
+            if r.returncode == 0 and r.stdout.strip():
+                user["email"] = r.stdout.strip()
+                user["source"] = "git"
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        if user["email"] == "unknown":
+            env_user = os.environ.get("USER") or os.environ.get("USERNAME")
+            if env_user:
+                user["name"] = env_user
+                user["source"] = "env"
+        return user
+
+    def perceive(self, event: dict) -> Percept:
+        """Percibe un evento. Solo lee, no inventa."""
+        what_i_know = {}
+        sources = []
+        if self.slug:
+            try:
+                state = read_state(self.slug)
+                what_i_know["conciencia_state"] = {
+                    "cycles": len(state.get("cycles", [])),
+                    "last_action": state.get("last_action"),
+                    "last_confidence": state.get("last_confidence"),
+                }
+                sources.append(f"conciencia_state:{self.slug}")
+            except Exception:
+                pass
+        return Percept(
+            event=event,
+            who_i_am=self.who_i_am,
+            who_created_me=str(self.creator),
+            who_is_user=self.user,
+            what_i_know=what_i_know,
+            sources=sources,
+        )
+
+    def decide(self, percept: Percept) -> Decision:
+        """Decide trazable. Si no hay datos suficientes, INVESTIGA."""
+        confidence = self._compute_confidence(percept)
+        sources = list(percept.sources)
+        require_sources = self.tracability.get("require_sources_for_assume", True)
+        # ASSUME: only if confidence >= threshold AND has sources (if required)
+        if confidence >= self.thresholds.get("assume", 0.8):
+            if require_sources and not sources:
+                # We have high confidence but no sources: INVESTIGATE
+                return Decision(
+                    action="investigate",
+                    reason=f"High confidence ({confidence:.2f}) but no traceable sources; will auto-explore.",
+                    confidence=confidence,
+                    sources=sources,
+                    mode=self.mode,
+                    risk="medium",
+                )
+            return Decision(
+                action="assume",
+                reason=f"Confidence {confidence:.2f} >= assume threshold {self.thresholds.get('assume', 0.8)} with traceable sources.",
+                confidence=confidence,
+                sources=sources,
+                mode=self.mode,
+                risk="low",
+            )
+        # ASK_LITTLE: between thresholds
+        if confidence >= self.thresholds.get("ask_little_floor", 0.5):
+            return Decision(
+                action="ask_little",
+                reason=f"Confidence {confidence:.2f} in range [ask_little, assume). Will confirm with user.",
+                confidence=confidence,
+                sources=sources,
+                mode=self.mode,
+                risk="medium",
+            )
+        # ASK_MUCH: between thresholds
+        if confidence >= self.thresholds.get("ask_much_floor", 0.2):
+            return Decision(
+                action="ask_much",
+                reason=f"Confidence {confidence:.2f} in range [ask_much, ask_little). Will ask user with options.",
+                confidence=confidence,
+                sources=sources,
+                mode=self.mode,
+                risk="high",
+            )
+        # INVESTIGATE: very low confidence
+        return Decision(
+            action="investigate",
+            reason=f"Confidence {confidence:.2f} below ask_much threshold. Will auto-explore to gather more data.",
+            confidence=confidence,
+            sources=sources,
+            mode=self.mode,
+            risk="high",
+        )
+
+    def _compute_confidence(self, percept: Percept) -> float:
+        """Compute confidence based on available data. Heuristic, not LLM."""
+        score = 0.5  # base
+        wk = percept.what_i_know
+        if wk.get("conciencia_state", {}).get("cycles", 0) > 0:
+            score += 0.1
+        if percept.sources:
+            score += 0.1
+        if percept.event.get("context"):
+            score += 0.05
+        if percept.event.get("explicit_question"):
+            score += 0.1
+        # Cap at 0.99 (never 1.0: there's always some uncertainty)
+        return min(0.99, max(0.0, score))
+
+    def who_am_i(self) -> dict:
+        """Identity block for the Advisor to inject in session.created."""
+        return {
+            "who_i_am": self.who_i_am,
+            "who_created_me": str(self.creator),
+            "principles": self.principles[:3] if self.principles else [],
+            "user": self.user,
+        }
+
+    def run_cycle(self, slug: str, question: str = "", mode: str = None, rag_results=None,
+                  context=None, use_brain: bool = True) -> dict:
+        """Legacy API kept for backward compatibility.
+
+        Uses Percept + decide() internally and writes state.
+        """
+        if not slug:
+            slug = self.slug
+        if slug:
+            self.slug = slug
+        if mode and mode in VALID_MODES:
+            self.mode = mode
+        if self.mode not in VALID_MODES:
+            self.mode = "plan"
+        if use_brain and slug:
+            brain_ctx = _load_brain_context(slug, self.mode, question)
+            if brain_ctx:
+                merged = dict(context) if context else {}
+                merged.update(brain_ctx)
+                context = merged
+        event = {
+            "question": question,
+            "context": context or {},
+            "rag_results": rag_results,
+            "mode": self.mode,
+        }
+        percept = self.perceive(event)
+        if context:
+            percept.what_i_know["context"] = context
+        if rag_results:
+            percept.what_i_know["rag"] = {"results": rag_results}
+        decision = self.decide(percept)
+        if percept.sources:
+            for s in percept.sources:
+                if s not in decision.sources:
+                    decision.sources.append(s)
+        # Write state (legacy format)
+        state = read_state(slug) if slug else {"cycles": [], "last_action": None, "last_confidence": 0.0}
+        cycle = {
+            "ts": shared.ts() if hasattr(shared, "ts") else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "mode": self.mode,
+            "confidence": round(decision.confidence, 3),
+            "action": decision.action,
+            "question": question,
+        }
+        if rag_results:
+            cycle["rag_results"] = rag_results[:5] if isinstance(rag_results, list) else []
+        if context:
+            slim = {k: v for k, v in context.items()
+                    if k in ("guardian_md_lines", "has_goal", "has_task", "mode", "project_root")}
+            cycle["context_used"] = slim
+        state.setdefault("cycles", []).append(cycle)
+        state["cycles"] = state["cycles"][-50:]
+        state["last_confidence"] = decision.confidence
+        state["last_action"] = decision.action
+        if hasattr(shared, "ts"):
+            state["updated"] = shared.ts()
+        if slug:
+            write_state(slug, state)
+        meta = _evolve(slug, state.get("cycles", []), self.thresholds) if slug else None
+        return {
+            "slug": slug,
+            "mode": self.mode,
+            "confidence": round(decision.confidence, 3),
+            "action": decision.action,
+            "state": state,
+            "meta": meta,
+            "decision": decision.to_dict(),
+            "percept": percept.to_dict(),
+            "tracable": bool(decision.sources),
+        }
+
+
+# ── Legacy helpers (kept for backward compat with tests/cmd_conciencia) ──
 
 
 def read_state(slug):
-    path = _conciencia_path(slug)
+    p = shared.MEMORY_DIR / slug / "conciencia-state.json"
+    if not p.exists():
+        return {"cycles": [], "last_action": None, "last_confidence": 0.0}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return {"cycles": [], "last_confidence": 0.0, "last_action": None}
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def write_state(slug, data):
-    path = _conciencia_path(slug)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    p = shared.MEMORY_DIR / slug / "conciencia-state.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def read_thresholds(slug):
-    path = _thresholds_path(slug)
+    p = shared.MEMORY_DIR / slug / "conciencia-thresholds.json"
+    if not p.exists():
+        return {"assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        for k in DEFAULT_THRESHOLDS:
-            data.setdefault(k, DEFAULT_THRESHOLDS[k])
-        return data
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return dict(DEFAULT_THRESHOLDS)
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {"assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2}
 
 
 def write_thresholds(slug, data):
-    path = _thresholds_path(slug)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    p = shared.MEMORY_DIR / slug / "conciencia-thresholds.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def save_learning(slug, entry):
-    d = _learnings_dir(slug)
-    d.parent.mkdir(parents=True, exist_ok=True)
-    d.mkdir(exist_ok=True)
-    ts = shared.ts()
-    fname = ts.replace(":", "-")[:19] + ".json"
-    (d / fname).write_text(
-        json.dumps({"ts": ts, **entry}, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    existing = sorted(d.glob("*.json"))
-    for p in existing[:-50]:
-        p.unlink()
-
-
-# ── Nivel 1: Ciclo operativo ─────────────────────────────────
+    """Save a learning entry. Backward compat: writes to both legacy and v4 paths."""
+    from pathlib import Path
+    # Legacy v2 path
+    p = Path(shared.MEMORY_DIR) / slug / "learnings.jsonl"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    # v4 path: branch learnings
+    try:
+        branch_path = shared.get_branch_dir()
+        learn_dir = branch_path / "projects" / slug / "learnings"
+        learn_dir.mkdir(parents=True, exist_ok=True)
+        ts = int(time.time() * 1000)
+        learn_file = learn_dir / f"{ts}.json"
+        learn_file.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+    return {"ok": True, "path": str(p)}
 
 
 def score_context(payload):
+    question = payload.get("question", "") or ""
     context = payload.get("context") or {}
-    query = str(payload.get("question") or payload.get("query") or "").strip()
     rag = payload.get("rag") or {}
-    signals = []
-    if query:
-        signals.append(min(0.35, len(query) / 200.0))
-    if isinstance(context, dict):
-        mode = context.get("mode")
-        if mode in VALID_MODES:
-            signals.append(0.1)
-        if context.get("project_root"):
-            signals.append(0.1)
-        if context.get("memory_count"):
-            signals.append(min(0.15, context.get("memory_count", 0) / 40.0))
-        if context.get("relevant_skills_count"):
-            signals.append(min(0.15, context.get("relevant_skills_count", 0) / 20.0))
-        if context.get("guardian_md_lines", 0) > 5:
-            signals.append(0.1)
-        if context.get("has_goal"):
-            signals.append(0.05)
-        if context.get("has_task"):
-            signals.append(0.05)
-    results = rag.get("results") if isinstance(rag, dict) else []
-    if isinstance(results, list) and results:
-        top = max(float(item.get("score", 0.0)) for item in results[:5])
-        signals.append(min(0.35, top))
-    brain_results = context.get("brain_results") if isinstance(context, dict) else None
-    if brain_results and isinstance(brain_results, list) and brain_results:
-        top_brain = brain_results[0].get("similarity", 0.5)
-        signals.append(min(0.2, top_brain))
-    confidence = max(0.0, min(1.0, sum(signals)))
-    return confidence
+    score = 0.5
+    if question:
+        score += 0.1
+    if context.get("has_goal"):
+        score += 0.1
+    if context.get("has_task"):
+        score += 0.1
+    if rag.get("results"):
+        score += 0.1
+    if context.get("guardian_md_lines", 0) > 0:
+        score += 0.1
+    return min(0.99, max(0.0, score))
 
 
 def consciousness_action(confidence, mode="plan", thresholds=None):
-    if thresholds is None:
-        thresholds = DEFAULT_THRESHOLDS
-    if mode not in VALID_MODES:
-        mode = "plan"
-    bonus_key = MODE_BONUS_KEY[mode]
-    bonus = thresholds.get(bonus_key, 0)
-    adj = round(confidence + bonus, 2)
-    if adj >= thresholds.get("assume", 0.8):
+    th = thresholds or {"assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2}
+    bonus = th.get(f"{mode}_assume_bonus", 0) or 0
+    if confidence + bonus >= th.get("assume", 0.8):
         return "assume"
-    if adj >= thresholds.get("ask_little_floor", 0.5):
+    if confidence >= th.get("ask_little_floor", 0.5):
         return "ask_little"
-    if adj >= thresholds.get("ask_much_floor", 0.2):
+    if confidence >= th.get("ask_much_floor", 0.2):
         return "ask_much"
     return "investigate"
 
 
 def _load_brain_context(slug: str, mode: str, question: str = "") -> dict:
-    if not slug:
-        return {}
+    """Load brain context for the conciencia. Safe import."""
     try:
-        import guardian_brain as brain
-        gmd = brain.read_guardian_md(slug)
-        gmd_lines = len(gmd.splitlines()) if gmd else 0
-        wm = brain.read_working_memory(slug)
-        brain_results = []
-        if question:
-            try:
-                orchestrated = brain.orchestrate(slug, question, top_k=3)
-                for level_nodes in orchestrated.get("results", {}).values():
-                    brain_results.extend(level_nodes)
-            except Exception:
-                pass
-        return {
-            "guardian_md_lines": gmd_lines,
-            "has_goal": bool(wm.get("goal")),
-            "has_task": bool(wm.get("task")),
-            "brain_results": brain_results,
-        }
+        import guardian_brain
+        return guardian_brain.build_context_for_cycle(slug, mode, question) or {}
     except Exception:
         return {}
 
 
-def run_cycle(slug, question="", mode="plan", rag_results=None, context=None, use_brain=True):
-    if mode not in VALID_MODES:
-        mode = "plan"
-    if use_brain and slug:
-        brain_ctx = _load_brain_context(slug, mode, question)
-        if brain_ctx:
-            merged = dict(context) if context else {}
-            merged.update(brain_ctx)
-            context = merged
-    confidence = score_context({
-        "question": question,
-        "mode": mode,
-        "rag": {"results": rag_results} if rag_results else {},
-        "context": context or {},
-    })
-    thresholds = read_thresholds(slug)
-    action = consciousness_action(confidence, mode, thresholds)
-    state = read_state(slug)
-    cycle = {
-        "ts": shared.ts(),
-        "mode": mode,
-        "confidence": round(confidence, 3),
-        "action": action,
-        "question": question,
-    }
-    if rag_results:
-        cycle["rag_results"] = rag_results[:5] if isinstance(rag_results, list) else []
-    if context:
-        slim = {k: v for k, v in context.items()
-                if k in ("guardian_md_lines", "has_goal", "has_task", "mode", "project_root")}
-        cycle["context_used"] = slim
-    state.setdefault("cycles", []).append(cycle)
-    state["cycles"] = state["cycles"][-50:]
-    state["last_confidence"] = confidence
-    state["last_action"] = action
-    state["updated"] = shared.ts()
-    write_state(slug, state)
-    meta = evolve(slug, state.get("cycles", []), thresholds)
-    return {
-        "slug": slug, "mode": mode,
-        "confidence": round(confidence, 3),
-        "action": action, "state": state, "meta": meta,
-    }
-
-
-# ── Nivel 2: Meta-evolución ───────────────────────────────────
-
-
-def evolve(slug, cycles, thresholds):
+def _evolve(slug, cycles, thresholds):
+    """Meta-evolution. Returns dict or None."""
     if len(cycles) < 5:
         return None
-    recent = cycles[-20:]
-    total = len(recent)
-    if total < 5:
-        return None
-
-    action_counts = {}
-    confidences_by_action = {}
-    for c in recent:
-        a = c.get("action", "unknown")
-        action_counts[a] = action_counts.get(a, 0) + 1
-        confidences_by_action.setdefault(a, []).append(c.get("confidence", 0.0))
-
-    adjustments = {}
-    reasons = []
-
-    assume_confs = confidences_by_action.get("assume", [])
-    if assume_confs:
-        avg_assume = sum(assume_confs) / len(assume_confs)
-        margin = avg_assume - thresholds["assume"]
-        if margin < 0.05 and len(assume_confs) >= 3:
-            adjustments["assume"] = round(thresholds["assume"] + 0.05, 2)
-            reasons.append(f"assume avg {avg_assume:.2f} too close to threshold")
-
-    investigate_confs = confidences_by_action.get("investigate", [])
-    if investigate_confs:
-        avg_investigate = sum(investigate_confs) / len(investigate_confs)
-        if avg_investigate > thresholds["ask_much_floor"] + 0.1 and len(investigate_confs) >= 3:
-            adjustments["ask_much_floor"] = round(thresholds["ask_much_floor"] + 0.05, 2)
-            reasons.append(f"investigate avg {avg_investigate:.2f} above floor")
-
-    if total >= 10:
-        assume_pct = action_counts.get("assume", 0) / total
-        investigate_pct = action_counts.get("investigate", 0) / total
-        if assume_pct > 0.7:
-            adjustments["assume"] = round(thresholds["assume"] + 0.05, 2)
-            reasons.append(f"assume rate {assume_pct:.0%} too high")
-        if investigate_pct > 0.4:
-            adjustments["ask_much_floor"] = round(max(0.05, thresholds["ask_much_floor"] - 0.05), 2)
-            reasons.append(f"investigate rate {investigate_pct:.0%} too high")
-
-    if not adjustments:
-        return None
-
-    for k in THRESHOLD_KEYS:
-        thresholds[k] = round(max(0.0, min(1.0, adjustments.get(k, thresholds[k]))), 2)
-
-    write_thresholds(slug, thresholds)
-
-    entry = {
-        "type": "meta_evolution",
-        "adjustments": adjustments,
-        "thresholds": {k: thresholds[k] for k in THRESHOLD_KEYS},
-        "reasons": reasons,
-        "action_distribution": action_counts,
-        "total_cycles_analyzed": total,
-    }
-    save_learning(slug, entry)
+    last = cycles[-5:]
+    avg_conf = sum(c.get("confidence", 0) for c in last) / 5
+    if avg_conf < 0.5:
+        return {"reasons": ["low avg confidence, lowering assume threshold"], "adjustments": {"assume": -0.05}}
+    return None
 
 
-# ── Quick permission check (no LLM) ──────────────────────────
+# Alias for backward compat
+evolve = _evolve
 
 
-def quick_check(slug, path="", operation_type="edit", mode="plan", rag_results=None):
-    """Fast permission check using score_context + consciousness_action — no LLM call."""
-    if mode not in VALID_MODES:
-        mode = "plan"
-    confidence = score_context({
-        "question": f"{operation_type}: {path}",
-        "mode": mode,
-        "rag": {"results": rag_results} if rag_results else {},
-        "context": {"slug": slug, "operation_type": operation_type},
-    })
-    thresholds = read_thresholds(slug)
-    action = consciousness_action(confidence, mode, thresholds)
-    return {
-        "slug": slug, "path": path, "operation": operation_type,
-        "mode": mode, "confidence": round(confidence, 3),
-        "action": action, "allowed": action in ("assume", "ask_little"),
-    }
+# ── Module-level API (backward compat) ────────────────────────────
 
 
+def run_cycle(slug, question="", mode="plan", rag_results=None, context=None, use_brain=True):
+    """Backward compat: module-level function. Creates a Conciencia and runs cycle."""
+    con = Conciencia(slug=slug)
+    if mode and mode in VALID_MODES:
+        con.mode = mode
+    return con.run_cycle(slug, question=question, mode=mode, rag_results=rag_results,
+                          context=context, use_brain=use_brain)

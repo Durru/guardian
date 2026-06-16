@@ -22,6 +22,9 @@ else:
 
 BRANCHES_DIR = shared.BACKEND_DIR / "genome" / "branches"
 IDENTITY_FILE = GENOME_DIR / "identity.yaml"
+SCHEMA_FILE = GENOME_DIR / "schema.yaml"
+CONSCIOUSNESS_FILE = GENOME_DIR / "consciousness.yaml"
+UPDATES_DIR = GENOME_DIR / "updates"
 
 
 def _branch_hash():
@@ -44,10 +47,107 @@ def _projects_dir():
 
 
 def load_genome():
-    if not IDENTITY_FILE.exists():
-        return {}
-    with open(IDENTITY_FILE, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    """Load the full genome: identity (immutable) + schema + consciousness.
+
+    The identity is yours (inmutable, no se modifica en runtime).
+    Schema and consciousness are loaded with safe fallbacks.
+    """
+    result = {}
+    if IDENTITY_FILE.exists():
+        try:
+            with open(IDENTITY_FILE, "r", encoding="utf-8") as f:
+                result = yaml.safe_load(f) or {}
+        except (OSError, yaml.YAMLError):
+            result = {}
+    # Schema (v4): definition of brain levels, codegraph, observer, advisor
+    if SCHEMA_FILE.exists():
+        try:
+            with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+                schema = yaml.safe_load(f) or {}
+            result["schema"] = schema
+        except (OSError, yaml.YAMLError):
+            result["schema"] = _default_schema()
+    else:
+        result["schema"] = _default_schema()
+    # Consciousness (v4): thresholds, modes, tracability, principles
+    if CONSCIOUSNESS_FILE.exists():
+        try:
+            with open(CONSCIOUSNESS_FILE, "r", encoding="utf-8") as f:
+                cons = yaml.safe_load(f) or {}
+            result["consciousness"] = cons
+        except (OSError, yaml.YAMLError):
+            result["consciousness"] = _default_consciousness()
+    else:
+        result["consciousness"] = _default_consciousness()
+    return result
+
+
+def _default_schema():
+    return {
+        "schema_version": 4,
+        "brain": {
+            "levels": ["semantic", "episodic", "procedural", "reflection"],
+            "global_levels": ["semantic_global", "procedural_global", "reflection_global"],
+            "extended_levels": ["codegraph_symbols", "codegraph_edges", "prompt_log",
+                                "decision_log", "stack_history", "test_results", "event_log"],
+        },
+        "codegraph": {"enabled": True, "languages": ["python", "typescript", "javascript", "go"]},
+        "observer": {"enabled": True, "auto_save_prompts": True},
+        "advisor": {"enabled": True, "max_context_tokens": 1000},
+    }
+
+
+def _default_consciousness():
+    return {
+        "thresholds": {"assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2},
+        "modes": ["read", "plan", "build", "commit", "review"],
+        "default_mode": "plan",
+        "tracability": {"require_sources_for_assume": True, "max_sources_per_decision": 10},
+        "principles": ["Razonar en base a lo que sabe, no a lo que se imagina",
+                       "No ensuciar la ventana de contexto"],
+    }
+
+
+def apply_to_user_branch(branch_path: Path) -> dict:
+    """v4: When the user does `guardian update`, apply the genome to their branch.
+
+    This is one of the FEW functions that touches the user branch directly.
+    The genome is the ONLY thing that decides what goes in the branch.
+    """
+    branch_path = Path(branch_path)
+    branch_path.mkdir(parents=True, exist_ok=True)
+    (branch_path / "evolution").mkdir(exist_ok=True)
+    genome = load_genome()
+    branch_file = branch_path / "branch.json"
+    if branch_file.exists():
+        try:
+            with open(branch_file) as f:
+                current = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            current = {}
+    else:
+        current = {}
+    current["genome_version"] = genome.get("schema", {}).get("schema_version", 4)
+    current["genome_updated_at"] = shared._now_epoch() if hasattr(shared, "_now_epoch") else 0
+    with open(branch_file, "w") as f:
+        json.dump(current, f, indent=2)
+    return {"ok": True, "branch": str(branch_path), "genome_version": current["genome_version"]}
+
+
+def accept_user_proposal(branch_path: Path, proposal: dict) -> dict:
+    """v4: Accept a new pattern proposal from the user's work into their branch.
+
+    The user branch contains learnings/customizations. Only the genome
+    decides what goes here (this function). Guardian proposes; genome accepts.
+    """
+    branch_path = Path(branch_path)
+    proposals_dir = branch_path / "evolution" / "proposals"
+    proposals_dir.mkdir(parents=True, exist_ok=True)
+    proposal_id = f"prop_{shared._now_epoch() if hasattr(shared, '_now_epoch') else 0}"
+    proposal_file = proposals_dir / f"{proposal_id}.json"
+    with open(proposal_file, "w") as f:
+        json.dump(proposal, f, indent=2)
+    return {"ok": True, "id": proposal_id, "path": str(proposal_file)}
 
 
 def load_branch(slug):

@@ -92,6 +92,100 @@ def production_dir(slug):
 
 # ── Schema DDL ─────────────────────────────────────────────────────────
 
+CODEGRAPH_DDL = """
+CREATE TABLE IF NOT EXISTS codegraph_symbols (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_slug TEXT,
+    file TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    qualified_name TEXT,
+    signature TEXT,
+    line_start INTEGER,
+    line_end INTEGER,
+    language TEXT,
+    docstring TEXT,
+    hash TEXT,
+    last_indexed_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_cg_file ON codegraph_symbols(file);
+CREATE INDEX IF NOT EXISTS idx_cg_kind ON codegraph_symbols(kind);
+CREATE INDEX IF NOT EXISTS idx_cg_lang ON codegraph_symbols(language);
+CREATE INDEX IF NOT EXISTS idx_cg_project ON codegraph_symbols(project_slug);
+
+CREATE TABLE IF NOT EXISTS codegraph_edges (
+    from_id INTEGER,
+    to_id INTEGER,
+    relation TEXT,
+    file TEXT,
+    line INTEGER,
+    PRIMARY KEY (from_id, to_id, relation)
+);
+CREATE INDEX IF NOT EXISTS idx_cg_edges_to ON codegraph_edges(to_id);
+"""
+
+PROMPT_LOG_DDL = """
+CREATE TABLE IF NOT EXISTS prompt_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL,
+    prompt TEXT,
+    reason_inferred TEXT,
+    mode TEXT,
+    files_in_context TEXT,
+    outcome TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pl_ts ON prompt_log(ts);
+"""
+
+DECISION_LOG_DDL = """
+CREATE TABLE IF NOT EXISTS decision_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL,
+    decision TEXT,
+    why TEXT,
+    alternatives TEXT,
+    project_slug TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dl_ts ON decision_log(ts);
+"""
+
+STACK_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS stack_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL,
+    runner TEXT,
+    packages TEXT,
+    project_slug TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sh_ts ON stack_history(ts);
+"""
+
+TEST_RESULTS_DDL = """
+CREATE TABLE IF NOT EXISTS test_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL,
+    runner TEXT,
+    passed INTEGER,
+    failed INTEGER,
+    duration_s REAL,
+    output TEXT,
+    project_slug TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tr_ts ON test_results(ts);
+"""
+
+EVENT_LOG_DDL = """
+CREATE TABLE IF NOT EXISTS event_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL,
+    event_type TEXT,
+    payload TEXT,
+    project_slug TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_el_ts ON event_log(ts);
+CREATE INDEX IF NOT EXISTS idx_el_type ON event_log(event_type);
+"""
+
 NODE_DDL = """
 CREATE TABLE IF NOT EXISTS nodes (
     id TEXT PRIMARY KEY,
@@ -164,6 +258,14 @@ def _apply_schema(db_path: Path, default_level: str):
     conn = sqlite3.connect(str(db_path))
     try:
         conn.executescript(NODE_DDL)
+        # v4: extended tables in semantic.db
+        if default_level == "semantic":
+            conn.executescript(CODEGRAPH_DDL)
+            conn.executescript(PROMPT_LOG_DDL)
+            conn.executescript(DECISION_LOG_DDL)
+            conn.executescript(STACK_HISTORY_DDL)
+            conn.executescript(TEST_RESULTS_DDL)
+            conn.executescript(EVENT_LOG_DDL)
         conn.execute(
             "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
             ("schema_version", str(SCHEMA_VERSION)),

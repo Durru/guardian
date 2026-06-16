@@ -2212,6 +2212,48 @@ def cmd_branch(slug, cmd_args):
 
 # ── cmd_evolve ─────────────────────────────────────────────────
 
+def cmd_update(slug, cmd_args):
+    """v4: Apply the latest genome to the user's branch.
+
+    This is how the user absorbs a new version of Guardian. The genome
+    (which the creator edits) is the ONLY thing that touches the user branch.
+    """
+    import guardian_genome
+    import guardian_shared as shared
+    from pathlib import Path
+    branch = shared.user_branch_path()
+    result = guardian_genome.apply_to_user_branch(branch)
+    print(f"  ✓ Update applied to {result['branch']}")
+    print(f"  Genome version: {result['genome_version']}")
+    return 0
+
+
+def cmd_propose(slug, cmd_args):
+    """v4: Propose a new pattern to the genome (will be persisted in user branch)."""
+    import guardian_genome
+    import guardian_shared as shared
+    import json
+    if not cmd_args:
+        print("Uso: guardian propose <kind> <content> [--why=...]")
+        return 1
+    kind = cmd_args[0]
+    content = " ".join(cmd_args[1:]) if len(cmd_args) > 1 else ""
+    why = ""
+    for arg in cmd_args:
+        if arg.startswith("--why="):
+            why = arg.split("=", 1)[1]
+    proposal = {
+        "kind": kind,
+        "content": content,
+        "why": why,
+        "ts": 0,
+    }
+    branch = shared.user_branch_path()
+    result = guardian_genome.accept_user_proposal(branch, proposal)
+    print(f"  ✓ Proposal accepted: {result['id']}")
+    return 0
+
+
 def cmd_evolve(slug, cmd_args):
     config = _read_config(slug)
     if not config:
@@ -2832,6 +2874,67 @@ def cmd_knowledge(args):
         return err(f"No se encontró: {KNOWLEDGE_SCRIPT}")
 
 
+def cmd_advisor(slug, cmd_args):
+    """v4: Advisor - injects dynamic context for the LLM."""
+    if not cmd_args:
+        print("Uso: guardian advisor <context|warn-action> <args>")
+        return 1
+    sub = cmd_args[0]
+    if sub == "context":
+        prompt = " ".join(cmd_args[1:]) if len(cmd_args) > 1 else ""
+        import guardian_brain_advisor as adv
+        a = adv.Advisor(slug or "default")
+        print(a.build_context(prompt, max_tokens=1000))
+        return 0
+    if sub == "warn-action":
+        # args: tool, args, file
+        tool = cmd_args[1] if len(cmd_args) > 1 else ""
+        action_args = cmd_args[2] if len(cmd_args) > 2 else ""
+        file = cmd_args[3] if len(cmd_args) > 3 else ""
+        import guardian_brain_advisor as adv
+        a = adv.Advisor(slug or "default")
+        result = a.advise_on_action({"tool": tool, "args": action_args, "file": file})
+        if result:
+            print(result.get("warn", ""))
+        return 0
+    return err("Uso: guardian advisor <context|warn-action>")
+
+
+def cmd_observer(slug, cmd_args):
+    """v4: Observer - routes events to the brain."""
+    if not cmd_args:
+        print("Uso: guardian observer <log-prompt|route> <args>")
+        return 1
+    sub = cmd_args[0]
+    import guardian_observer as obs
+    if sub == "log-prompt":
+        prompt = cmd_args[1] if len(cmd_args) > 1 else ""
+        flags = " ".join(cmd_args[2:]) if len(cmd_args) > 2 else ""
+        mode = "build"
+        for f in flags.split():
+            if f.startswith("--mode="):
+                mode = f.split("=", 1)[1]
+        reason = obs.infer_reason_from_prompt(prompt)
+        eid = obs.log_prompt(slug or "default", prompt, reason, mode)
+        print(f"  ✓ Prompt logged: id={eid}, reason={reason}")
+        return 0
+    if sub == "route":
+        # args: tool, args_json, output_json
+        tool = cmd_args[1] if len(cmd_args) > 1 else ""
+        args_json = cmd_args[2] if len(cmd_args) > 2 else "{}"
+        output_json = cmd_args[3] if len(cmd_args) > 3 else "{}"
+        import json as _json
+        try:
+            args = _json.loads(args_json)
+            output = _json.loads(output_json)
+        except Exception:
+            args, output = {}, {}
+        o = obs.Observer(slug or "default")
+        o.observe({"type": "tool.execute.after", "tool": tool, "args": args, "output": output})
+        return 0
+    return err("Uso: guardian observer <log-prompt|route>")
+
+
 def cmd_specialization(args):
     if not args:
         print("Uso: guardian specialization <list|show|enable|disable|install|detect> [args...]")
@@ -3294,6 +3397,12 @@ def main():
         slug, rest = _resolve_slug(cmd_args)
         return cmd_evolve(slug, rest)
 
+    if cmd == "update":
+        return cmd_update(None, [])
+
+    if cmd == "propose":
+        return cmd_propose(None, cmd_args)
+
     if cmd == "consolidate":
         slug, rest = _resolve_slug(cmd_args)
         return cmd_consolidate(slug, rest)
@@ -3343,6 +3452,15 @@ def main():
         return cmd_reflect(cmd_args)
     if cmd == "brain":
         return cmd_brain(cmd_args)
+
+    if cmd == "advisor":
+        # advisor sub: context|warn-action (slug is optional, defaults to current)
+        return cmd_advisor(None, cmd_args)
+
+    if cmd == "observer":
+        # observer sub: log-prompt|route (slug is optional)
+        return cmd_observer(None, cmd_args)
+
     # ── v3: knowledge, specialization, plan, maintain ──
     if cmd == "knowledge":
         return cmd_knowledge(cmd_args)

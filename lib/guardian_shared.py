@@ -15,10 +15,35 @@ _GUARDIAN_DATA = os.environ.get("GUARDIAN_DATA", "")
 if _GUARDIAN_DATA:
     MEMORY_DIR = Path(_GUARDIAN_DATA) / "projects"
     BACKEND_DIR = Path(_GUARDIAN_DATA)
+    USERS_DIR = Path(_GUARDIAN_DATA) / "users"
 else:
     MEMORY_DIR = Path("/var/guardian/projects")
     BACKEND_DIR = Path("/var/guardian")
+    USERS_DIR = Path("/var/guardian") / "users"
 DEFAULT_MODE = "plan"
+
+
+# ── v4: user branch (rama única por usuario) ───────────────────
+
+def user_branch_path() -> Path:
+    """The user's unique branch. One per machine/user.
+
+    Layout: $GUARDIAN_DATA/users/<machine-id>/...
+    """
+    machine_id = _get_machine_id()
+    branch = USERS_DIR / machine_id
+    branch.mkdir(parents=True, exist_ok=True)
+    (branch / "evolution").mkdir(exist_ok=True)
+    return branch
+
+
+def project_root_path(slug: str) -> Path:
+    """The root for a specific project. Lives inside the user's branch."""
+    branch = user_branch_path()
+    root = branch / "projects" / slug / "root"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "brain").mkdir(exist_ok=True)
+    return root
 
 GUARDIAN_LANG = os.environ.get("GUARDIAN_LANG", "en")
 
