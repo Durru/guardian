@@ -3171,10 +3171,10 @@ def cmd_stack(action, slug):
 # ── main ────────────────────────────────────────────────────────
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h"):
-        print("🛡️  Nexxoria Guardian")
+    if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h", "--ayuda"):
+        print("🛡️  Nexxoria Guardian v4.0.0")
         print()
-        print("Uso: guardian <comando> [args...]")
+        print("Usage: guardian <command> [args...]")
         print()
         print("Proyecto:")
         print("  activate [slug]              Activar Guardian (setup + branch + absorb + docs + conciencia)")
@@ -3250,6 +3250,10 @@ def main():
         print()
         print("Stack:")
         print("  build|dev|test|lint|typecheck|deploy|logs [slug]")
+        return 0
+
+    if sys.argv[1] in ("--version", "-v"):
+        print("Nexxoria Guardian v4.0.0")
         return 0
 
     args = sys.argv[1:]
