@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import sqlite3
 import struct
@@ -51,8 +52,53 @@ def _tokenize(text: str) -> list[str]:
     return re.findall(r'[a-záéíóúñü0-9]+', text.lower())
 
 
+_EMBED_BACKEND = os.environ.get("GUARDIAN_EMBED_BACKEND", "hashing").lower()
+_SENTENCE_TRANSFORMER = None
+
+
+def _embed_external(text: str) -> bytes | None:
+    """Optional sentence-transformers backend. Returns None if unavailable.
+
+    Set GUARDIAN_EMBED_BACKEND=sentence-transformer to enable. Requires
+    `pip install sentence-transformers` (NOT a zero-dep dependency, opt-in only).
+    Returns embeddings of EMBED_DIM if possible, else None (fall back to hashing).
+    """
+    global _SENTENCE_TRANSFORMER
+    if _EMBED_BACKEND != "sentence-transformer":
+        return None
+    if _SENTENCE_TRANSFORMER is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            import os as _os
+            model_name = _os.environ.get("GUARDIAN_EMBED_MODEL", "all-MiniLM-L6-v2")
+            _SENTENCE_TRANSFORMER = SentenceTransformer(model_name)
+        except ImportError:
+            return None
+        except Exception:
+            return None
+    try:
+        vec = _SENTENCE_TRANSFORMER.encode(text, normalize_embeddings=True)
+        if len(vec) != EMBED_DIM:
+            if len(vec) > EMBED_DIM:
+                vec = vec[:EMBED_DIM]
+            else:
+                vec = list(vec) + [0.0] * (EMBED_DIM - len(vec))
+        return struct.pack(f"{EMBED_DIM}f", *vec)
+    except Exception:
+        return None
+
+
 def embed(text: str) -> bytes:
-    """Compute a hashing-features embedding of `text`. Returns BLOB."""
+    """Compute embedding of `text`. Returns BLOB.
+
+    Backends (via GUARDIAN_EMBED_BACKEND env var):
+    - 'hashing' (default): zero-deps MD5 hashing features
+    - 'sentence-transformer': real embeddings (requires pip install sentence-transformers)
+    Falls back to hashing if external backend unavailable.
+    """
+    external = _embed_external(text)
+    if external is not None:
+        return external
     tokens = _tokenize(text)
     vec = [0.0] * EMBED_DIM
     for tok in tokens:

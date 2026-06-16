@@ -48,6 +48,11 @@ def _discover_projects():
     return shared.discover_projects()
 
 
+def _get_brain_schema():
+    import guardian_brain_schema
+    return guardian_brain_schema
+
+
 def _project_exists(slug):
     return shared.project_exists(slug)
 
@@ -389,6 +394,19 @@ class GuardianHandler(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.do_GET()
 
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/")
+        parts = path.strip("/").split("/")
+        if len(parts) == 3 and parts[2] == "save" and parts[1] in ("guardian.md", "brain.md"):
+            slug = parts[0]
+            if not _project_exists(slug):
+                self._send_404()
+                return
+            self._serve_guardian_md_save(slug, parts)
+            return
+        self._send_404()
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
@@ -440,8 +458,18 @@ class GuardianHandler(http.server.BaseHTTPRequestHandler):
                 self._serve_audit_json(slug)
             elif endpoint == "rag.json":
                 self._serve_rag_json(slug, parsed.query)
+            elif endpoint == "guardian.md" or endpoint == "brain.md":
+                self._serve_guardian_md(slug)
             else:
                 self._send_404()
+            return
+
+        if len(parts) == 3 and parts[2] == "save":
+            slug = parts[0]
+            if not _project_exists(slug):
+                self._send_404()
+                return
+            self._serve_guardian_md_save(slug, parts)
             return
 
         self._send_404()
@@ -545,6 +573,88 @@ class GuardianHandler(http.server.BaseHTTPRequestHandler):
     def _serve_audit_json(self, slug):
         audit = _read_audit(slug)
         self._send_json({"slug": slug, "audit": audit, "count": len(audit)})
+
+    def _serve_guardian_md(self, slug):
+        """v3: serve GUARDIAN.md as editable HTML."""
+        import guardian_brain
+        guardian_brain_schema = _get_brain_schema()
+        guardian_brain_schema.init_project(slug)
+        content = guardian_brain.read_guardian_md(slug)
+        lines = content.count("\n") + (1 if content else 0)
+        escaped = (content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+        body = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>GUARDIAN.md — {slug}</title>
+<style>
+body {{ font-family: monospace; max-width: 900px; margin: 2em auto; padding: 0 1em; }}
+textarea {{ width: 100%; min-height: 400px; font-family: monospace; font-size: 14px; padding: 0.5em; border: 1px solid #ccc; border-radius: 4px; }}
+button {{ margin: 0.5em 0; padding: 0.5em 1em; background: #2c7; color: white; border: 0; border-radius: 4px; cursor: pointer; }}
+button:hover {{ background: #1a5; }}
+.meta {{ color: #666; font-size: 0.9em; margin: 1em 0; }}
+#status {{ margin-left: 1em; color: #666; }}
+</style></head><body>
+<h1>GUARDIAN.md — <code>{slug}</code></h1>
+<p class="meta">{lines} líneas · auto-loaded cada sesión</p>
+<form method="POST" action="/{slug}/brain.md/save">
+  <textarea name="content" id="content">{escaped}</textarea>
+  <p><button type="submit">Guardar</button><span id="status"></span></p>
+</form>
+<script>
+document.querySelector('form').onsubmit = async (e) => {{
+  e.preventDefault();
+  const content = document.getElementById('content').value;
+  const r = await fetch('/{slug}/brain.md/save', {{
+    method: 'POST', headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{content}})
+  }});
+  const status = document.getElementById('status');
+  if (r.ok) {{
+    status.textContent = '✓ Guardado';
+    status.style.color = '#2c7';
+    setTimeout(() => status.textContent = '', 2000);
+  }} else {{
+    status.textContent = '✗ Error: ' + r.status;
+    status.style.color = '#c33';
+  }}
+}};
+</script>
+</body></html>"""
+        self._send_html(body)
+
+    def _serve_guardian_md_save(self, slug, parts):
+        """v3: save GUARDIAN.md from form data or JSON body."""
+        import guardian_brain
+        guardian_brain_schema = _get_brain_schema()
+        guardian_brain_schema.init_project(slug)
+        content_type = self.headers.get("Content-Type", "")
+        content = None
+        if "application/json" in content_type:
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length).decode("utf-8")
+                import json as _json
+                data = _json.loads(raw)
+                content = data.get("content", "")
+            except Exception as e:
+                self._send_error(400, f"invalid JSON: {e}")
+                return
+        else:
+            try:
+                from urllib.parse import parse_qs
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length).decode("utf-8")
+                data = parse_qs(raw)
+                content = data.get("content", [""])[0]
+            except Exception as e:
+                self._send_error(400, f"invalid form: {e}")
+                return
+        if not isinstance(content, str):
+            self._send_error(400, "content must be a string")
+            return
+        if len(content.splitlines()) > guardian_brain.GUARDIAN_MD_MAX_LINES:
+            self._send_error(400, f"exceeds max {guardian_brain.GUARDIAN_MD_MAX_LINES} lines")
+            return
+        result = guardian_brain.write_guardian_md(slug, content)
+        self._send_json(result)
 
     def _serve_rag_json(self, slug, query_string):
         from urllib.parse import parse_qs

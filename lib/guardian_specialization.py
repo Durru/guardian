@@ -122,6 +122,38 @@ def install_builtin(name: str) -> dict:
         (target / "knowledge.json").write_text(
             json.dumps(manifest["seed_knowledge"], indent=2, ensure_ascii=False), encoding="utf-8",
         )
+
+
+def create_user_spec(name: str, description: str, knowledge: list[str],
+                     procedures: list[str] = None, tags: list[str] = None) -> dict:
+    """Create a user-defined specialization from a YAML/JSON manifest.
+
+    Persists to ~/.guardian/specializations/<name>/manifest.yaml.
+    Use enable(slug, name) afterwards to install the knowledge in a project.
+    """
+    if name in BUILTIN_SPECS:
+        return {"ok": False, "error": f"name '{name}' conflicts with built-in"}
+    if not name.replace("-", "").replace("_", "").isalnum():
+        return {"ok": False, "error": f"name must be alphanumeric (got: {name!r})"}
+    if not knowledge:
+        return {"ok": False, "error": "knowledge list cannot be empty"}
+    _ensure_spec_dir()
+    target = SPEC_DIR / name
+    target.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "name": name,
+        "version": "1.0.0",
+        "description": description or f"User-defined specialization: {name}",
+        "is_builtin": False,
+        "tags": tags or [],
+        "knowledge": knowledge,
+        "procedures": procedures or [],
+    }
+    (target / "manifest.yaml").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8",
+    )
+    return {"ok": True, "name": name, "path": str(target / "manifest.yaml"),
+            "knowledge_count": len(knowledge), "procedures_count": len(procedures or [])}
     if manifest.get("seed_procedures"):
         (target / "procedures.json").write_text(
             json.dumps(manifest["seed_procedures"], indent=2, ensure_ascii=False), encoding="utf-8",
@@ -360,6 +392,35 @@ def main():
         result = detect_stack(root)
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0
+    if cmd == "create":
+        if len(sys.argv) < 5:
+            print("Uso: guardian specialization create <name> <description> <knowledge.json> [--procedures=<procedures.json>] [--tags=<tag1,tag2>]")
+            print("  knowledge.json: path to JSON file with list of strings")
+            return 1
+        name = sys.argv[2]
+        desc = sys.argv[3]
+        knowledge_path = sys.argv[4]
+        try:
+            with open(knowledge_path, encoding="utf-8") as f:
+                knowledge = json.load(f)
+            if not isinstance(knowledge, list):
+                print(f"knowledge file must be a JSON list")
+                return 1
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"failed to read {knowledge_path}: {e}")
+            return 1
+        procedures = []
+        tags = []
+        for arg in sys.argv[5:]:
+            if arg.startswith("--procedures="):
+                ppath = arg.split("=", 1)[1]
+                with open(ppath, encoding="utf-8") as f:
+                    procedures = json.load(f)
+            elif arg.startswith("--tags="):
+                tags = [t.strip() for t in arg.split("=", 1)[1].split(",") if t.strip()]
+        result = create_user_spec(name, desc, knowledge, procedures, tags)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return 0 if result.get("ok") else 1
     print(f"Unknown command: {cmd}")
     print(USAGE)
     return 1

@@ -80,11 +80,58 @@ def format_tree(slug: str, indent: int = 0) -> str:
     return "\n".join(lines)
 
 
+def to_mermaid(slug: str) -> str:
+    """Return a Mermaid `graph LR` representation of the project's lineage.
+
+    Use in any Markdown viewer that supports Mermaid (GitHub, GitLab, etc).
+    """
+    lineage = read_lineage(slug)
+    lines = ["```mermaid", "graph LR"]
+    parent = lineage.get("parent")
+    if parent:
+        lines.append(f"    {parent}[{parent}]:::parent --> {slug}[{slug}]")
+    for t in lineage.get("templates_cloned", []):
+        lines.append(f"    {t}[{t}]:::template -.-> {slug}")
+    for f in lineage.get("forks_made", []):
+        lines.append(f"    {slug} --> {f}[{f}]")
+    for c in lineage.get("clones_made", []):
+        lines.append(f"    {slug} -.-> {c}[{c}]")
+    for p in lineage.get("published_templates", []):
+        lines.append(f"    {slug} ==>|published| {p}[{p}]")
+    if parent is None and not any(lineage.get(k) for k in ("templates_cloned", "forks_made", "clones_made", "published_templates")):
+        lines.append(f"    {slug}[{slug}]")
+    lines.append("    classDef parent fill:#fef,stroke:#333,stroke-width:2px")
+    lines.append("    classDef template fill:#efe,stroke:#333")
+    lines.append("```")
+    return "\n".join(lines)
+
+
+def to_dot(slug: str) -> str:
+    """Return a Graphviz DOT representation of the project's lineage."""
+    lineage = read_lineage(slug)
+    lines = ["digraph lineage {", '  rankdir="LR";', f'  "{slug}";']
+    parent = lineage.get("parent")
+    if parent:
+        lines.append(f'  "{parent}" -> "{slug}" [label="forked from"];')
+    for t in lineage.get("templates_cloned", []):
+        lines.append(f'  "{t}" -> "{slug}" [label="template", style="dashed"];')
+    for f in lineage.get("forks_made", []):
+        lines.append(f'  "{slug}" -> "{f}" [label="fork"];')
+    for c in lineage.get("clones_made", []):
+        lines.append(f'  "{slug}" -> "{c}" [label="clone", style="dashed"];')
+    for p in lineage.get("published_templates", []):
+        lines.append(f'  "{slug}" -> "{p}" [label="published", style="bold"];')
+    lines.append("}")
+    return "\n".join(lines)
+
+
 USAGE = """Guardian Lineage — usage:
   show <slug> [--tree]
   record-parent <slug> <parent-slug>
   record-template <slug> <template-name> <version>
   record-fork <slug> <child-slug>
+  mermaid <slug>           — generate Mermaid diagram markdown
+  dot <slug>                — generate Graphviz DOT
 """
 
 
@@ -123,6 +170,18 @@ def main():
             return 1
         result = record_fork(sys.argv[2], sys.argv[3])
         return 0 if result.get("ok") else 1
+    if cmd == "mermaid":
+        if len(sys.argv) < 3:
+            print("mermaid requires slug")
+            return 1
+        print(to_mermaid(sys.argv[2]))
+        return 0
+    if cmd == "dot":
+        if len(sys.argv) < 3:
+            print("dot requires slug")
+            return 1
+        print(to_dot(sys.argv[2]))
+        return 0
     print(f"Unknown command: {cmd}")
     print(USAGE)
     return 1
