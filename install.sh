@@ -209,19 +209,27 @@ install_files() {
     $SUDO_CMD mkdir -p "$GUARDIAN_HOME" "$GUARDIAN_DATA"
 
     info "Copiando código (lib/, docs/, templates/, prompts/, tests/)..."
-    $SUDO_CMD cp -r "$SOURCE_DIR/lib"        "$GUARDIAN_HOME/lib"
-    $SUDO_CMD cp -r "$SOURCE_DIR/genome"     "$GUARDIAN_HOME/genome"
-    $SUDO_CMD cp -r "$SOURCE_DIR/docs"       "$GUARDIAN_HOME/docs"
-    $SUDO_CMD cp -r "$SOURCE_DIR/templates"  "$GUARDIAN_HOME/templates"
-    $SUDO_CMD cp -r "$SOURCE_DIR/prompts"    "$GUARDIAN_HOME/prompts"
-    $SUDO_CMD cp -r "$SOURCE_DIR/tests"      "$GUARDIAN_HOME/tests"
-    $SUDO_CMD cp -r "$SOURCE_DIR/commands"   "$GUARDIAN_HOME/commands"
-    $SUDO_CMD cp -r "$SOURCE_DIR/systemd"     "$GUARDIAN_HOME/systemd" 2>/dev/null || true
-    $SUDO_CMD cp -r "$SOURCE_DIR/.github"     "$GUARDIAN_HOME/.github" 2>/dev/null || true
+    if [ "$(cd "$SOURCE_DIR" && pwd)" = "$(cd "$GUARDIAN_HOME" 2>/dev/null && pwd || echo none)" ]; then
+        info "SOURCE_DIR == GUARDIAN_HOME: archivos ya en su lugar (in-place upgrade)"
+    else
+        $SUDO_CMD cp -r "$SOURCE_DIR/lib"        "$GUARDIAN_HOME/lib"
+        $SUDO_CMD cp -r "$SOURCE_DIR/genome"     "$GUARDIAN_HOME/genome"
+        $SUDO_CMD cp -r "$SOURCE_DIR/docs"       "$GUARDIAN_HOME/docs"
+        $SUDO_CMD cp -r "$SOURCE_DIR/templates"  "$GUARDIAN_HOME/templates"
+        $SUDO_CMD cp -r "$SOURCE_DIR/prompts"    "$GUARDIAN_HOME/prompts"
+        $SUDO_CMD cp -r "$SOURCE_DIR/tests"      "$GUARDIAN_HOME/tests"
+        $SUDO_CMD cp -r "$SOURCE_DIR/commands"   "$GUARDIAN_HOME/commands"
+        $SUDO_CMD cp -r "$SOURCE_DIR/systemd"     "$GUARDIAN_HOME/systemd" 2>/dev/null || true
+        $SUDO_CMD cp -r "$SOURCE_DIR/.github"     "$GUARDIAN_HOME/.github" 2>/dev/null || true
+    fi
 
     for f in SKILL.md LICENSE README.md AGENTS.md pyproject.toml; do
         if [ -f "$SOURCE_DIR/$f" ]; then
-            $SUDO_CMD cp "$SOURCE_DIR/$f" "$GUARDIAN_HOME/$f"
+            if [ "$(cd "$SOURCE_DIR" && pwd)" = "$(cd "$GUARDIAN_HOME" 2>/dev/null && pwd || echo none)" ]; then
+                : # in-place, no copy needed
+            else
+                $SUDO_CMD cp "$SOURCE_DIR/$f" "$GUARDIAN_HOME/$f"
+            fi
         fi
     done
 
