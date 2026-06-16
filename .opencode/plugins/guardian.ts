@@ -247,14 +247,14 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
       },
 
       guardian_mode: {
-        description: "Switch Guardian mode (plan/build) or show current status",
+        description: "Switch Guardian mode (read/plan/build/commit/review) or show current status",
         args: {
-          mode: { type: "string", enum: ["plan", "build"], description: "Target mode" },
+          mode: { type: "string", enum: ["read", "plan", "build", "commit", "review"], description: "Target mode" },
           reason: { type: "string", description: "Reason for switching" },
         },
         async execute(args: any) {
           if (!args.mode) {
-          const out = guardian("mode", slug, "status")
+            const out = guardian("mode", slug, "status")
             return { mode: out || "plan" }
           }
           const reason = args.reason || "via OpenCode plugin"
@@ -311,6 +311,183 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           }
         },
       },
+
+      // ── v3 cognitive memory tools ───────────────────────────
+
+      guardian_brain_read: {
+        description: "Read GUARDIAN.md essential working memory (always-loaded)",
+        args: {
+          slug: { type: "string", description: "Project slug (default: current)" },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const out = guardian("brain", "guardian", s)
+          return { slug: s, guardian_md: out }
+        },
+      },
+
+      guardian_brain_query: {
+        description: "Vector search the project's cognitive memory (semantic/episodic/procedural/reflection)",
+        args: {
+          slug: { type: "string" },
+          level: { type: "string", enum: ["semantic", "episodic", "procedural", "reflection"] },
+          q: { type: "string" },
+          top_k: { type: "number" },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const k = args.top_k || 5
+          const out = guardian("brain", "query", s, args.level, args.q, "--top-k", String(k))
+          return { slug: s, level: args.level, q: args.q, result: out }
+        },
+      },
+
+      guardian_brain_write: {
+        description: "Write a node to the project's brain (passes through Governor)",
+        args: {
+          slug: { type: "string" },
+          level: { type: "string", enum: ["semantic", "episodic", "procedural", "reflection"] },
+          kind: { type: "string" },
+          content: { type: "string" },
+          importance: { type: "number" },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const imp = args.importance ?? 0.6
+          const out = guardian("brain", "write", s, args.level, args.kind, args.content, "--importance", String(imp))
+          return { slug: s, result: out }
+        },
+      },
+
+      guardian_brain_reflect: {
+        description: "Trigger the Reflection Agent (post-session memory consolidation)",
+        args: {
+          slug: { type: "string" },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const out = guardian("brain", "reflect", s)
+          return { slug: s, result: out }
+        },
+      },
+
+      guardian_session_end: {
+        description: "End session: reflection + GUARDIAN.md regen + handoff",
+        args: {
+          slug: { type: "string" },
+          reason: { type: "string" },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const r = args.reason || "explicit"
+          const out = guardian("session", s, "end", "--reason=" + r)
+          return { slug: s, result: out }
+        },
+      },
+
+      guardian_knowledge_research: {
+        description: "Investigate a topic and return a research plan with TTL",
+        args: {
+          slug: { type: "string" },
+          query: { type: "string" },
+          depth: { type: "string", enum: ["quick", "deep"] },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const d = args.depth || "quick"
+          const out = guardian("knowledge", "research", s, args.query, "--depth", d)
+          return { slug: s, query: args.query, result: out }
+        },
+      },
+
+      guardian_specialization_enable: {
+        description: "Activate a stack-aware specialization (odoo, nextjs, fastapi, postgres, python)",
+        args: {
+          slug: { type: "string" },
+          name: { type: "string" },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const out = guardian("specialization", "enable", s, args.name)
+          return { slug: s, name: args.name, result: out }
+        },
+      },
+
+      guardian_maintain: {
+        description: "Run a complete project health report (drift, stale nodes, config issues)",
+        args: {
+          slug: { type: "string" },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const out = guardian("maintain", s)
+          return { slug: s, result: out }
+        },
+      },
+
+      guardian_publish: {
+        description: "Publish a project as a sanitized template",
+        args: {
+          slug: { type: "string" },
+          version: { type: "string" },
+          to: { type: "string", enum: ["template", "production"] },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const v = args.version || "1.0.0"
+          const t = args.to || "template"
+          const out = guardian("publish", s, "--version=" + v, "--to=" + t)
+          return { slug: s, result: out }
+        },
+      },
+
+      guardian_clone: {
+        description: "Create a new project from a template",
+        args: {
+          template: { type: "string" },
+          new: { type: "string" },
+        },
+        async execute(args: any) {
+          const out = guardian("clone", args.template, args.new)
+          return { result: out }
+        },
+      },
+
+      guardian_capability_status: {
+        description: "Read the model card (success rate per task type)",
+        args: {},
+        async execute(_args: any) {
+          const out = guardian("capability", "status")
+          return { result: out }
+        },
+      },
+
+      guardian_capability_routing: {
+        description: "Decide whether to delegate a task to the LLM or answer from local memory",
+        args: {
+          task_type: { type: "string" },
+          context_size: { type: "number" },
+          complexity: { type: "string", enum: ["low", "medium", "high"] },
+        },
+        async execute(args: any) {
+          const cx = args.context_size ?? 0
+          const co = args.complexity ?? "medium"
+          const out = guardian("capability", "routing", args.task_type, "--context-size", String(cx), "--complexity", co)
+          return { result: out }
+        },
+      },
+
+      guardian_compact_now: {
+        description: "Trigger auto-compaction of the brain (Governor GC + archive)",
+        args: {
+          slug: { type: "string" },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const out = guardian("brain", "auto-compact", s)
+          return { slug: s, result: out }
+        },
+      },
     },
 
     // ── permission.ask: intercept and block guarded ops ───────
@@ -362,7 +539,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
 
         output.context.push([
           `## Guardian Context`,
-          `Guardian v2 is active. Current mode: **${currentMode.trim()}**`,
+          `Guardian v3 is active. Current mode: **${currentMode.trim()}**`,
           `Project slug: \`${slug}\``,
           ``,
           `### Module Permissions`,
@@ -373,15 +550,31 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           ``,
           `### Available Tools`,
           `- \`guardian_status\` — genome, branch, mode`,
-          `- \`guardian_conciencia\` — run consciousness cycle`,
+          `- \`guardian_conciencia\` — run consciousness cycle (N1+N2)`,
           `- \`guardian_rag\` — search knowledge base`,
-          `- \`guardian_mode\` — switch plan/build mode`,
+          `- \`guardian_mode\` — switch plan/build/commit/review/read mode`,
           `- \`guardian_check_permission\` — check if an operation is allowed`,
           `- \`guardian_why_blocked\` — explain why a path is blocked`,
+          ``,
+          `### v3 Cognitive Memory Tools`,
+          `- \`guardian_brain_read\` — read GUARDIAN.md (always-loaded)`,
+          `- \`guardian_brain_query\` — vector search in semantic/episodic/procedural/reflection`,
+          `- \`guardian_brain_write\` — write a node (passes through Governor)`,
+          `- \`guardian_brain_reflect\` — trigger reflection agent`,
+          `- \`guardian_session_end\` — end session: reflect + GUARDIAN.md regen`,
+          `- \`guardian_knowledge_research\` — research with TTL`,
+          `- \`guardian_specialization_enable\` — activate odoo/nextjs/fastapi/postgres/python`,
+          `- \`guardian_maintain\` — health report (drift, stale)`,
+          `- \`guardian_publish\` — publish as sanitized template`,
+          `- \`guardian_clone\` — clone from template`,
+          `- \`guardian_capability_status\` — read model card`,
+          `- \`guardian_capability_routing\` — LLM delegation decision`,
+          `- \`guardian_compact_now\` — auto-compact brain`,
           ``,
           `Use \`guardian_check_permission\` BEFORE editing a guarded file.`,
           `Use \`guardian_why_blocked\` to understand and resolve blocks.`,
           `Use \`guardian_conciencia\` to seed conciencia for a new task.`,
+          `Use \`guardian_brain_read\` FIRST in any new session (the 200-line working memory).`,
           `Absorb skills with: \`guardian absorb scan && guardian absorb match ${slug}\``,
         ].join("\n"))
       } catch {

@@ -701,7 +701,7 @@ def _handle_call(tool_name, args, id_val):
         if not slug or not q:
             _respond(id_val, error={"code": -32602, "message": "slug and q required"})
             return
-        results = guardian_brain.search(slug, level, q, top_k=top_k)
+        results = guardian_brain.query(slug, level, q, top_k=top_k)
         _respond(id_val, {"slug": slug, "level": level, "q": q, "results": results})
 
     elif tool_name == "brain_write":
@@ -779,7 +779,9 @@ def _handle_call(tool_name, args, id_val):
         _respond(id_val, guardian_publish.clone(template, new_slug))
 
     elif tool_name == "capability_status":
-        _respond(id_val, guardian_capability.status())
+        card = guardian_capability.load_card()
+        metrics = card.get("metrics", {}) if isinstance(card, dict) else {}
+        _respond(id_val, {"model": card.get("model", "guardian-default") if isinstance(card, dict) else "guardian-default", "metrics": metrics, "card": card})
 
     elif tool_name == "capability_routing":
         task_type = args.get("task_type", "")

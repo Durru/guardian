@@ -2900,7 +2900,7 @@ def cmd_publish(args):
     if not args:
         print("Uso: guardian publish <slug> [--to=template|production] [--version=X.Y.Z]")
         return 1
-    cmd = [sys.executable, str(PUBLISH_SCRIPT)] + args
+    cmd = [sys.executable, str(PUBLISH_SCRIPT), "publish"] + args
     try:
         result = subprocess.run(cmd)
         return result.returncode
@@ -3238,6 +3238,37 @@ def main():
 
     if cmd == "knowledge":
         return cmd_knowledge(cmd_args)
+
+    if cmd == "session":
+        if not cmd_args:
+            return err("Uso: guardian session <start|continue|end> <slug> [--reason=...]")
+        sub = cmd_args[0]
+        slug = cmd_args[1] if len(cmd_args) > 1 else None
+        if not slug:
+            slug = _find_slug()
+        if not slug:
+            return err("Slug requerido.")
+        import guardian_brain
+        from pathlib import Path as _Path
+        _T = shared._
+        if sub == "start":
+            mode = cmd_args[2] if len(cmd_args) > 2 else None
+            result = guardian_brain.session_start(slug, mode=mode)
+            print(_T("  ✓ Sesión iniciada: {slug} (modo={mode})", slug=slug, mode=result.get("mode", "?")))
+            return 0
+        if sub == "continue":
+            result = guardian_brain.session_continue(slug)
+            print(_T("  ✓ Sesión continuada: {slug}", slug=slug))
+            return 0
+        if sub == "end":
+            reason = "explicit"
+            for a in cmd_args[2:]:
+                if a.startswith("--reason="):
+                    reason = a.split("=", 1)[1]
+            result = guardian_brain.session_end(slug, reason=reason)
+            print(_T("  ✓ Sesión cerrada: {slug} (razón={reason})", slug=slug, reason=reason))
+            return 0
+        return err("Uso: guardian session <start|continue|end> <slug> [--reason=...]")
 
     if cmd == "conciencia":
         slug, rest = _resolve_slug(cmd_args)
