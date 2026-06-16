@@ -135,14 +135,24 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
         if parsed.path == "/mode":
             slug = _project_slug(params)
             if not slug:
-                return _json_response(self, 400, {"error": "slug required"})
+                return _json_response(self, 200, {
+                    "mode": shared.DEFAULT_MODE,
+                    "default": True,
+                    "hint": "pass ?slug=<name> for project-specific mode",
+                })
             return _json_response(self, 200, shared.read_mode_state(slug))
 
         if parsed.path == "/genome":
+            import json as _json
+            from datetime import date, datetime as _dt
+            def _serialize(obj):
+                if isinstance(obj, (date, _dt)):
+                    return obj.isoformat()
+                raise TypeError(f"Not JSON serializable: {type(obj)}")
             genome = guardian_genome.load_genome()
             branches = guardian_genome.list_branches()
             return _json_response(self, 200, {
-                "genome": genome,
+                "genome": _json.loads(_json.dumps(genome, default=_serialize)),
                 "branches": branches,
             })
 

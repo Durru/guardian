@@ -148,8 +148,19 @@ def _now_epoch() -> float:
 
 
 def _apply_schema(db_path: Path, default_level: str):
-    """Apply schema to a single DB file. Creates file if missing."""
+    """Apply schema to a single DB file. Creates file if missing. Recovers from corruption."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    if db_path.exists() and db_path.stat().st_size > 0:
+        try:
+            test_conn = sqlite3.connect(str(db_path))
+            test_conn.execute("PRAGMA integrity_check").fetchone()
+            test_conn.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1").fetchone()
+            test_conn.close()
+        except sqlite3.DatabaseError:
+            import shutil
+            corrupt_path = db_path.with_suffix(db_path.suffix + f".corrupt-{int(datetime.now().timestamp())}")
+            shutil.move(str(db_path), str(corrupt_path))
+            print(f"  ⚠ DB corrupto movido a: {corrupt_path.name}")
     conn = sqlite3.connect(str(db_path))
     try:
         conn.executescript(NODE_DDL)

@@ -84,6 +84,33 @@ def cosine(a_bytes: bytes, b_bytes: bytes) -> float:
     return dot / (na * nb)
 
 
+def cosine_bulk(q_bytes: bytes, candidates: list[bytes]) -> list[float]:
+    """Cosine similarity between q and a list of candidates. Faster than calling cosine() N times.
+
+    Unpacks q once and reuses it across all candidates.
+    """
+    if not q_bytes or not candidates:
+        return [0.0] * len(candidates)
+    q = struct.unpack(f"{EMBED_DIM}f", q_bytes)
+    qn_sq = sum(x * x for x in q)
+    if qn_sq == 0:
+        return [0.0] * len(candidates)
+    qn = math.sqrt(qn_sq)
+    out = []
+    for cb in candidates:
+        if not cb:
+            out.append(0.0)
+            continue
+        c = struct.unpack(f"{EMBED_DIM}f", cb)
+        cn_sq = sum(x * x for x in c)
+        if cn_sq == 0:
+            out.append(0.0)
+            continue
+        dot = sum(x * y for x, y in zip(q, c))
+        out.append(dot / (qn * math.sqrt(cn_sq)))
+    return out
+
+
 def cosine_text(text_a: str, text_b: str) -> float:
     """Convenience: embed two strings and return cosine similarity."""
     return cosine(embed(text_a), embed(text_b))
@@ -102,6 +129,8 @@ def _node_id(kind: str, content: str, project_slug: str = None) -> str:
 # ── Low-level DB ops ───────────────────────────────────────────────────
 
 
+_CONN_CACHE = {}
+
 def _connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if not db_path.exists():
@@ -110,7 +139,23 @@ def _connect(db_path: Path) -> sqlite3.Connection:
             schema._apply_schema(db_path, level_name)
         elif level_name in ["semantic_global", "procedural_global", "reflection_global"]:
             schema._apply_schema(db_path, level_name.replace("_global", "_g"))
-    return sqlite3.connect(str(db_path))
+    key = str(db_path)
+    if key in _CONN_CACHE:
+        return _CONN_CACHE[key]
+    conn = sqlite3.connect(str(db_path), timeout=30.0, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    _CONN_CACHE[key] = conn
+    return conn
+
+
+def _reset_conn_cache():
+    """Clear connection cache. By default does NOT close conns (faster for tests).
+
+    Pass close=True to also close all cached conns.
+    """
+    global _CONN_CACHE
+    _CONN_CACHE = {}
 
 
 def _now_epoch() -> float:
@@ -190,7 +235,8 @@ def read(slug: str, level: str, node_id: str) -> dict | None:
             return None
         return _row_to_dict(row)
     finally:
-        conn.close()
+        if str(db) not in _CONN_CACHE:
+            conn.close()
 
 
 def write(slug: str, level: str, node: dict) -> dict:
@@ -214,7 +260,8 @@ def write(slug: str, level: str, node: dict) -> dict:
         conn.commit()
         return {"ok": True, "id": fields["id"], "action": "wrote"}
     finally:
-        conn.close()
+        if str(db) not in _CONN_CACHE:
+            conn.close()
 
 
 def write_governed(slug: str, level: str, node: dict) -> dict:
@@ -252,8 +299,13 @@ def write_governed(slug: str, level: str, node: dict) -> dict:
 
 
 def query(slug: str, level: str, q: str, top_k: int = 5,
-          min_similarity: float = 0.01, project_only: bool = True) -> list[dict]:
-    """Vector search using hashing features. Returns top_k most similar nodes."""
+          min_similarity: float = 0.01, project_only: bool = True,
+          limit_scan: int = None) -> list[dict]:
+    """Vector search using hashing features. Returns top_k most similar nodes.
+
+    limit_scan: if set, only scan the most recent N nodes (performance optimization
+    for the Governor's duplicate check during writes).
+    """
     if level not in schema.PROJECT_LEVELS:
         raise ValueError(f"Invalid project level: {level}")
     db = schema.brain_db_path(slug, level)
@@ -263,20 +315,26 @@ def query(slug: str, level: str, q: str, top_k: int = 5,
     conn = _connect(db)
     try:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM nodes WHERE embedding IS NOT NULL"
-        ).fetchall()
+        if limit_scan is not None:
+            rows = conn.execute(
+                "SELECT * FROM nodes WHERE embedding IS NOT NULL "
+                "ORDER BY created_at DESC LIMIT ?",
+                (limit_scan,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM nodes WHERE embedding IS NOT NULL"
+            ).fetchall()
     finally:
-        conn.close()
+        if str(db) not in _CONN_CACHE:
+            conn.close()
     scored = []
-    for row in rows:
+    embs = [r["embedding"] if "embedding" in r.keys() else None for r in rows]
+    sims = cosine_bulk(q_embed, embs)
+    for row, sim in zip(rows, sims):
         d = _row_with_embedding(row)
         if project_only and d.get("project_slug") and d.get("project_slug") != slug:
             continue
-        node_emb = d.get("embedding")
-        if not node_emb:
-            continue
-        sim = cosine(q_embed, node_emb)
         if sim >= min_similarity:
             scored.append((sim, d))
     scored.sort(key=lambda x: -x[0])
@@ -328,7 +386,8 @@ def list_nodes(slug: str, level: str, filters: dict | None = None,
         rows = conn.execute(sql, params).fetchall()
         return [_row_to_dict(r) for r in rows]
     finally:
-        conn.close()
+        if str(db) not in _CONN_CACHE:
+            conn.close()
 
 
 def delete(slug: str, level: str, node_id: str) -> dict:
@@ -344,7 +403,8 @@ def delete(slug: str, level: str, node_id: str) -> dict:
         conn.commit()
         return {"ok": True, "deleted": cur.rowcount}
     finally:
-        conn.close()
+        if str(db) not in _CONN_CACHE:
+            conn.close()
 
 
 def count(slug: str, level: str, filters: dict | None = None) -> int:
@@ -370,7 +430,8 @@ def count(slug: str, level: str, filters: dict | None = None) -> int:
             sql += " WHERE " + " AND ".join(where)
         return conn.execute(sql, params).fetchone()[0]
     finally:
-        conn.close()
+        if str(db) not in _CONN_CACHE:
+            conn.close()
 
 
 # ── Governor ────────────────────────────────────────────────────────────
@@ -418,7 +479,8 @@ def governor_evaluate(slug: str, candidate: dict) -> dict:
         }
 
     similar = query(slug, level, content, top_k=3,
-                    min_similarity=th["duplicate_threshold"] - 0.1)
+                    min_similarity=th["duplicate_threshold"] - 0.1,
+                    limit_scan=50)
 
     if similar:
         top_node = similar[0]
@@ -485,7 +547,8 @@ def governor_gc(slug: str, level: str, dry_run: bool = False) -> dict:
             "dry_run": dry_run,
         }
     finally:
-        conn.close()
+        if str(db) not in _CONN_CACHE:
+            conn.close()
 
 
 # ── Stats / status ─────────────────────────────────────────────────────
@@ -515,7 +578,8 @@ def status(slug: str) -> dict:
                     result["totals"]["by_kind"][kind] = result["totals"]["by_kind"].get(kind, 0) + n
                     result["totals"]["by_level"][level] = result["totals"]["by_level"].get(level, 0) + n
             finally:
-                conn.close()
+                if str(db) not in _CONN_CACHE:
+                    conn.close()
     gmd = schema.guardian_md_path(slug)
     result["guardian_md"] = {
         "exists": gmd.exists(),
@@ -1017,7 +1081,8 @@ def _mark_consolidated(slug: str, level: str, node_id: str) -> bool:
         conn.commit()
         return True
     finally:
-        conn.close()
+        if str(db) not in _CONN_CACHE:
+            conn.close()
 
 
 # ── Auto-Compact ──────────────────────────────────────────────────
@@ -1195,7 +1260,8 @@ def global_write(level: str, node: dict) -> dict:
         conn.commit()
         return {"ok": True, "id": fields["id"]}
     finally:
-        conn.close()
+        if str(db) not in _CONN_CACHE:
+            conn.close()
 
 
 def global_query(level: str, q: str, top_k: int = 5) -> list[dict]:
@@ -1210,7 +1276,8 @@ def global_query(level: str, q: str, top_k: int = 5) -> list[dict]:
         conn.row_factory = sqlite3.Row
         rows = conn.execute("SELECT * FROM nodes WHERE embedding IS NOT NULL").fetchall()
     finally:
-        conn.close()
+        if str(db) not in _CONN_CACHE:
+            conn.close()
     scored = []
     for row in rows:
         d = _row_with_embedding(row)

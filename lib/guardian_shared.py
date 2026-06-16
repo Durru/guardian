@@ -1130,8 +1130,13 @@ def _get_machine_id() -> str:
     return hashlib.sha256(os.uname().nodename.encode()).hexdigest()[:32]
 
 
+_BRANCH_HASH_CACHE = None
+
 def _branch_hash() -> str:
-    return hashlib.sha256(_get_machine_id().encode("utf-8")).hexdigest()[:16]
+    global _BRANCH_HASH_CACHE
+    if _BRANCH_HASH_CACHE is None:
+        _BRANCH_HASH_CACHE = hashlib.sha256(_get_machine_id().encode("utf-8")).hexdigest()[:16]
+    return _BRANCH_HASH_CACHE
 
 
 def get_branch_dir() -> Path:

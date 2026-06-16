@@ -96,14 +96,16 @@ def migrate(slug: str, dry_run: bool = False) -> dict:
                     except json.JSONDecodeError:
                         continue
                     results["v2_memory_entries"] += 1
+                    raw_kind = entry.get("type") or entry.get("kind") or "note"
+                    raw_importance = entry.get("importance")
                     classification = classify_v2_kind(
-                        entry.get("type", "note"),
+                        raw_kind,
                         entry.get("content", ""),
                     )
                     node = {
                         "kind": classification["kind"],
                         "content": entry.get("content", ""),
-                        "importance": classification["importance"],
+                        "importance": raw_importance if isinstance(raw_importance, (int, float)) else classification["importance"],
                         "ttl": classification["ttl"],
                         "tags": [entry.get("scope", "")] if entry.get("scope") else [],
                         "source": "v2_migration",
