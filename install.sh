@@ -469,6 +469,21 @@ for f in fails:
     fi
 }
 
+install_deps() {
+    if [ "$UNINSTALL" = true ] || [ "$MODE" = "dev" ]; then
+        return
+    fi
+    info "Instalando dependencias Python..."
+    # tree-sitter (v4: codegraph parser AST)
+    $SUDO_CMD pip install tree-sitter tree-sitter-python tree-sitter-typescript \
+        tree-sitter-javascript tree-sitter-go -q 2>/dev/null || \
+        warn "No se pudieron instalar tree-sitter (necesario para codegraph)"
+    # pyyaml (ya era dependencia, ahora obligatoria)
+    $SUDO_CMD pip install pyyaml -q 2>/dev/null || true
+    ok "Dependencias instaladas"
+}
+
+
 verify_install() {
     section "Verificación post-instalación"
     local errors=0
@@ -696,6 +711,7 @@ main() {
     install_opencode
     install_systemd
     setup_env_vars
+    install_deps
     verify_install
     final_message
 }

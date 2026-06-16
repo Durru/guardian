@@ -6,10 +6,13 @@ import traceback
 from pathlib import Path
 
 import guardian_brain
+import guardian_brain_advisor
+import guardian_brain_symbols
 import guardian_capability
 import guardian_conciencia
 import guardian_genome
 import guardian_knowledge
+import guardian_observer
 import guardian_publish
 import guardian_rag
 import guardian_shared as shared
@@ -418,6 +421,60 @@ TOOLS = [
             "required": ["slug"],
         },
     },
+    {
+        "name": "codegraph_lookup",
+        "description": "v4: CodeGraph — busca símbolos en el mapa del proyecto (AST indexado con tree-sitter). 1 tool = 40 calls.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "query": {"type": "string"},
+                "top_k": {"type": "number", "default": 5},
+                "max_tokens": {"type": "number", "default": 2000},
+            },
+            "required": ["slug", "query"],
+        },
+    },
+    {
+        "name": "advisor_context",
+        "description": "v4: Advisor — inyecta contexto dinámico para el LLM. Retorna vacío si nada relevante.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "prompt": {"type": "string"},
+                "max_tokens": {"type": "number", "default": 500},
+            },
+            "required": ["slug"],
+        },
+    },
+    {
+        "name": "advisor_warn_action",
+        "description": "v4: Advisor — advierte si una acción del LLM es riesgosa.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "tool": {"type": "string"},
+                "args": {"type": "string"},
+                "file": {"type": "string"},
+            },
+            "required": ["slug"],
+        },
+    },
+    {
+        "name": "observer_log_prompt",
+        "description": "v4: Observer — loguea un prompt del usuario con razón inferida. Saneado de secrets.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "prompt": {"type": "string"},
+                "mode": {"type": "string", "default": "build"},
+            },
+            "required": ["slug", "prompt"],
+        },
+    },
 ]
 
 
@@ -800,6 +857,51 @@ def _handle_call(tool_name, args, id_val):
             _respond(id_val, error={"code": -32602, "message": "slug required"})
             return
         _respond(id_val, guardian_brain.auto_compact(slug, dry_run=False))
+
+    elif tool_name == "codegraph_lookup":
+        slug = args.get("slug", "")
+        query = args.get("query", "")
+        top_k = int(args.get("top_k", 5))
+        max_tokens = int(args.get("max_tokens", 2000))
+        if not slug or not query:
+            _respond(id_val, error={"code": -32602, "message": "slug and query required"})
+            return
+        result = guardian_brain_symbols.query_smart(slug, query, top_k=top_k, max_tokens=max_tokens)
+        _respond(id_val, {"slug": slug, "query": query, "result": result})
+
+    elif tool_name == "advisor_context":
+        slug = args.get("slug", "")
+        prompt = args.get("prompt", "")
+        max_tokens = int(args.get("max_tokens", 500))
+        if not slug:
+            _respond(id_val, error={"code": -32602, "message": "slug required"})
+            return
+        advisor = guardian_brain_advisor.Advisor(slug)
+        ctx = advisor.build_context(prompt, max_tokens=max_tokens)
+        _respond(id_val, {"slug": slug, "context": ctx, "injected": bool(ctx)})
+
+    elif tool_name == "advisor_warn_action":
+        slug = args.get("slug", "")
+        tool_name_arg = args.get("tool", "")
+        tool_args = args.get("args", "")
+        tool_file = args.get("file", "")
+        if not slug:
+            _respond(id_val, error={"code": -32602, "message": "slug required"})
+            return
+        advisor = guardian_brain_advisor.Advisor(slug)
+        result = advisor.advise_on_action({"tool": tool_name_arg, "args": tool_args, "file": tool_file})
+        _respond(id_val, {"slug": slug, "warn": result.get("warn") if result else None, "risk": result.get("risk") if result else None})
+
+    elif tool_name == "observer_log_prompt":
+        slug = args.get("slug", "")
+        prompt = args.get("prompt", "")
+        mode = args.get("mode", "build")
+        if not slug or not prompt:
+            _respond(id_val, error={"code": -32602, "message": "slug and prompt required"})
+            return
+        reason = guardian_observer.infer_reason_from_prompt(prompt)
+        eid = guardian_observer.log_prompt(slug, prompt, reason, mode)
+        _respond(id_val, {"slug": slug, "id": eid, "reason": reason})
 
     else:
         _respond(id_val, error={"code": -32601, "message": f"Tool not found: {tool_name}"})

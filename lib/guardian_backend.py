@@ -59,6 +59,13 @@ def _read_body(handler):
         return {}
 
 
+def _get_param(query_string, key, default=""):
+    from urllib.parse import parse_qs
+    params = parse_qs(query_string)
+    vals = params.get(key, [])
+    return vals[0] if vals else default
+
+
 def _project_slug(params, body=None):
     body = body or {}
     for key in ("slug",):
@@ -346,6 +353,40 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             if not slug:
                 return _json_response(self, 400, {"error": "slug required"})
             return _json_response(self, 200, guardian_lineage.read_lineage(slug))
+
+        # ── v4 GET endpoints ──
+        if parsed.path == "/codegraph/status":
+            slug = _project_slug(params)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            import guardian_brain_symbols
+            cg = guardian_brain_symbols.get_codegraph(slug)
+            return _json_response(self, 200, {"slug": slug, "has_index": cg.has_index()})
+
+        if parsed.path == "/observer/prompts":
+            slug = _project_slug(params)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            limit = int(_get_param(parsed.query, "limit", "10"))
+            try:
+                import sqlite3
+                db = guardian_brain_schema.brain_db_path(slug, "semantic")
+                con = sqlite3.connect(str(db))
+                rows = con.execute(
+                    "SELECT id, ts, prompt, reason_inferred, mode FROM prompt_log ORDER BY ts DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+                con.close()
+                data = [{"id": r[0], "ts": r[1], "prompt": r[2], "reason": r[3], "mode": r[4]} for r in rows]
+            except Exception:
+                data = []
+            return _json_response(self, 200, {"slug": slug, "prompts": data})
+
+        if parsed.path == "/advisor/identity":
+            import guardian_conciencia
+            slug = _project_slug(params)
+            c = guardian_conciencia.Conciencia(slug=slug)
+            return _json_response(self, 200, c.who_am_i())
 
         return _json_response(self, 404, {"error": "not found"})
 
@@ -775,9 +816,58 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             complexity = str(body.get("complexity", "medium"))
             if not task_type:
                 return _json_response(self, 400, {"error": "task_type required"})
-            return _json_response(self, 200, guardian_capability.routing_decision(
+             return _json_response(self, 200, guardian_capability.routing_decision(
                 task_type, context_size=ctx_size, complexity=complexity
             ))
+
+        # ── v4: advisor context ──
+        if parsed.path == "/advisor/context":
+            slug = _project_slug(params, body)
+            prompt = str(body.get("prompt", ""))
+            max_tokens = int(body.get("max_tokens", 500))
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            import guardian_brain_advisor
+            advisor = guardian_brain_advisor.Advisor(slug)
+            ctx = advisor.build_context(prompt, max_tokens=max_tokens)
+            return _json_response(self, 200, {"slug": slug, "context": ctx, "injected": bool(ctx)})
+
+        # ── v4: advisor warn ──
+        if parsed.path == "/advisor/warn":
+            slug = _project_slug(params, body)
+            tool_name = str(body.get("tool", ""))
+            tool_args = str(body.get("args", ""))
+            tool_file = str(body.get("file", ""))
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            import guardian_brain_advisor
+            advisor = guardian_brain_advisor.Advisor(slug)
+            result = advisor.advise_on_action({"tool": tool_name, "args": tool_args, "file": tool_file})
+            return _json_response(self, 200, result or {"warn": None, "risk": None})
+
+        # ── v4: observer log-prompt ──
+        if parsed.path == "/observer/log-prompt":
+            slug = _project_slug(params, body)
+            prompt = str(body.get("prompt", ""))
+            mode = str(body.get("mode", "build"))
+            if not slug or not prompt:
+                return _json_response(self, 400, {"error": "slug and prompt required"})
+            import guardian_observer
+            reason = guardian_observer.infer_reason_from_prompt(prompt)
+            eid = guardian_observer.log_prompt(slug, prompt, reason, mode)
+            return _json_response(self, 200, {"slug": slug, "id": eid, "reason": reason})
+
+        # ── v4: codegraph query_smart ──
+        if parsed.path == "/codegraph/query":
+            slug = _project_slug(params, body)
+            query = str(body.get("query", ""))
+            top_k = int(body.get("top_k", 5))
+            max_tokens = int(body.get("max_tokens", 2000))
+            if not slug or not query:
+                return _json_response(self, 400, {"error": "slug and query required"})
+            import guardian_brain_symbols
+            result = guardian_brain_symbols.query_smart(slug, query, top_k=top_k, max_tokens=max_tokens)
+            return _json_response(self, 200, {"slug": slug, "query": query, "result": result})
 
         return _json_response(self, 404, {"error": "not found"})
 
