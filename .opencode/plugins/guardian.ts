@@ -488,6 +488,47 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, result: out }
         },
       },
+
+      guardian_query_smart: {
+        description: "CodeGraph query: search project symbols by name/signature (1 tool = 40 calls)",
+        args: {
+          slug: { type: "string", description: "Project slug (default: current)" },
+          query: { type: "string", description: "Symbol name or keyword to search" },
+          top_k: { type: "number", description: "Max results (default: 10)" },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const k = args.top_k || 10
+          const out = guardian("codegraph", "query", s, args.query || "")
+          return { slug: s, query: args.query, result: out }
+        },
+      },
+
+      guardian_codegraph_index: {
+        description: "Index the project's source code into CodeGraph (tree-sitter AST symbols)",
+        args: {
+          slug: { type: "string", description: "Project slug (default: current)" },
+          full: { type: "boolean", description: "Full re-index (default: incremental)" },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const full = args.full ? "--full" : ""
+          const out = guardian("codegraph", "index", s, full)
+          return { slug: s, result: out }
+        },
+      },
+
+      guardian_codegraph_status: {
+        description: "Check if CodeGraph is indexed and show symbol counts",
+        args: {
+          slug: { type: "string", description: "Project slug (default: current)" },
+        },
+        async execute(args: any) {
+          const s = args.slug || slug
+          const out = guardian("codegraph", "status", s)
+          return { slug: s, result: out }
+        },
+      },
     },
 
     // ── permission.ask: intercept and block guarded ops ───────
@@ -531,36 +572,59 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
       }
     },
 
+    // ── v4.1.0: session.created — SOLO GUARDIAN.md (~25 líneas) ──
     "session.created": async (_input: any, output: any) => {
       try {
         currentMode = guardian("mode", slug, "status") || "plan"
         output.context = output.context || []
 
-        // v4: Advisor builds dynamic context (5-15 lines vs 30 fixed)
-        // Returns "" if nothing relevant: doesn't pollute the context window
-        const advisorCtx = guardian(
-          "brain", "advisor-context", slug, ""
-        )
-        if (advisorCtx) {
-          output.context.push("## Guardian\n" + advisorCtx)
+        const gmd = guardian("brain", "guardian", slug)
+        if (gmd) {
+          output.context.push("## Guardian\n" + gmd)
         }
-        // Compact tools list (one line) so the LLM knows what exists
-        output.context.push("Guardian tools: guardian_status, guardian_conciencia, guardian_rag, guardian_mode, guardian_brain_read, guardian_brain_query, guardian_brain_write, guardian_brain_reflect, guardian_session_end, guardian_query_smart, guardian_knowledge_research, guardian_specialization_enable, guardian_maintain, guardian_publish, guardian_capability_status, guardian_compact_now, guardian_check_permission, guardian_why_blocked")
+        output.context.push("Guardian tools: guardian_status, guardian_conciencia, guardian_rag, guardian_mode, guardian_brain_read, guardian_brain_query, guardian_brain_write, guardian_brain_reflect, guardian_session_end, guardian_query_smart, guardian_codegraph_index, guardian_codegraph_status, guardian_knowledge_research, guardian_specialization_enable, guardian_maintain, guardian_publish, guardian_capability_status, guardian_compact_now, guardian_check_permission, guardian_why_blocked, guardian_analyze_intent, guardian_save_observation, guardian_get_observation, guardian_get_last_good, guardian_plan_or_act, guardian_compact_memory")
       } catch {
         // silent
       }
     },
 
-    // v4: chat.message hook — log user prompts
-    "chat.message": async (input: any, _ctx: any) => {
+    // ── v4.1.0: chat.message — analiza + busca contexto + auto-save ──
+    "chat.message": async (input: any, output: any) => {
       try {
-        guardian("observer", "log-prompt", slug, input.content || "", "--mode=build")
+        const prompt = input.content || ""
+        if (!prompt) return
+
+        const intentRaw = guardian("brain", "mcp-call", slug, "analyze_intent",
+                                   JSON.stringify({ prompt }))
+        let intent: any = {}
+        try { intent = JSON.parse(intentRaw) } catch { return }
+        const topicKey = intent.topic_key || ""
+
+        if (topicKey && intent.has_context) {
+          const obsRaw = guardian("brain", "mcp-call", slug, "get_observation",
+                                   JSON.stringify({ slug, topic_key: topicKey }))
+          let obs: any = {}
+          try { obs = JSON.parse(obsRaw) } catch { /* ignore */ }
+          if (obs.observations && obs.observations.length > 0) {
+            output.context = output.context || []
+            const lines = obs.observations.slice(0, 3).map((o: any) => {
+              const mark: Record<string, string> = { success: "✅", failure: "❌", warning: "⚠️", info: "ℹ️" }
+              return `${mark[o.outcome] || "•"} ${(o.content || "").substring(0, 120)}`
+            })
+            output.context.push(`## Guardian (${topicKey})\n${lines.join("\n")}`)
+          }
+        }
+
+        if ((intent.importance || 0) > 0.5) {
+          guardian("brain", "write-auto", slug, "semantic", "chat_event",
+                   prompt.substring(0, 200), "--importance=0.5")
+        }
       } catch {
         // silent
       }
     },
 
-    // v4: tool.execute.before — advisor warns if action is risky
+    // ── v4.1.0: tool.execute.before — solo si es riesgoso ──
     "tool.execute.before": async (input: any, output: any) => {
       try {
         const warn = guardian(
@@ -576,24 +640,33 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
       }
     },
 
-    // v4: tool.execute.after — observer routes the event
+    // ── v4.1.0: tool.execute.after — observa + guarda si relevante ──
     "tool.execute.after": async (input: any, _output: any) => {
       try {
-        guardian("observer", "route", slug, input.tool || "",
-                 JSON.stringify(input.args || {}), JSON.stringify(_output || {}))
+        const tool = input.tool || ""
+        const args = typeof input.args === "string" ? input.args : JSON.stringify(input.args || {})
+        guardian("observer", "route", slug, tool, args, JSON.stringify(_output || {}))
+
+        if (tool === "Edit" || tool === "Write") {
+          guardian("save_observation", slug, "decision", "edit/file-change",
+                   `Edited: ${input.file || args.substring(0, 100)}`,
+                   "--outcome=info", "--scope=project")
+        }
       } catch {
         // silent
       }
     },
 
+    // ── v4.1.0: experimental.session.compacting — re-inyecta GUARDIAN.md ──
     "experimental.session.compacting": async (_input: any, output: any) => {
       try {
         currentMode = guardian("mode", slug, "status") || "plan"
         output.context = output.context || []
-        output.context.push(
-          `Guardian v2 active for \`${slug}\`. Mode: **${currentMode.trim()}**. ` +
-          `Modules guarded by conciencia: ${MODULES.filter(m => m.guard === "conciencia").map(m => `\`${m.name}\``).join(", ")}.`
-        )
+
+        const gmd = guardian("brain", "guardian", slug)
+        if (gmd) {
+          output.context.push("## Guardian\n" + gmd)
+        }
       } catch {
         // silent
       }

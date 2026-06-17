@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import guardian_brain_advisor as advisor_mod
 import guardian_genome
 import guardian_shared as shared
 
@@ -130,9 +131,14 @@ class Conciencia:
         return user
 
     def perceive(self, event: dict) -> Percept:
-        """Percibe un evento. Solo lee, no inventa."""
+        """Percibe un evento. Solo lee, no inventa.
+
+        v4 D15: Integra Advisor.build_context() para enriquecer percepción
+        con contexto dinámico del brain del proyecto.
+        """
         what_i_know = {}
         sources = []
+        question = event.get("question", "")
         if self.slug:
             try:
                 state = read_state(self.slug)
@@ -142,6 +148,15 @@ class Conciencia:
                     "last_confidence": state.get("last_confidence"),
                 }
                 sources.append(f"conciencia_state:{self.slug}")
+            except Exception:
+                pass
+            # v4 D15: enrich perception with Advisor context (if relevant)
+            try:
+                adv = advisor_mod.Advisor(self.slug, conciencia=self)
+                advisor_ctx = adv.build_context(question, max_tokens=500)
+                if advisor_ctx:
+                    what_i_know["advisor_context"] = advisor_ctx
+                    sources.append(f"advisor:{self.slug}")
             except Exception:
                 pass
         return Percept(
@@ -216,6 +231,8 @@ class Conciencia:
             score += 0.1
         if percept.sources:
             score += 0.1
+        if wk.get("advisor_context"):
+            score += 0.1  # v4 D15: Advisor enrichment = more certainty
         if percept.event.get("context"):
             score += 0.05
         if percept.event.get("explicit_question"):

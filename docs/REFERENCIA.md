@@ -51,6 +51,8 @@
 | `guardian evolve [slug]` | Disparar evolución de rama |
 | `guardian consolidate [slug]` | Consolidar memoria + RAG |
 | `guardian forja <index\|list\|doctor\|new\|validate\|impact\|edit\|rm\|protect\|run\|function\|endpoint\|mcp-tool\|diff\|graph\|patch>` | La Forja: meta-módulo del arquitecto |
+| `guardian codegraph <index\|query\|status> [slug]` | CodeGraph: indexar/buscar/status del AST del proyecto |
+| `guardian migrate <status\|migrate\|rollback> <slug>` | Migrar proyecto de v3 a v4 layout |
 
 ### GitHub
 
@@ -113,7 +115,9 @@
 | `/knowledge/status` | `slug` | Índice de conocimiento + lista de tomos |
 | `/knowledge/tomes` | `slug` | Lista detallada de tomos con preview |
 | `/knowledge/search` | `slug`, `q` | Búsqueda semántica en tomos |
-| `/mcp/tools` | — | Lista de 9 herramientas MCP disponibles |
+| `/mcp/tools` | — | Lista de herramientas MCP disponibles |
+| `/codegraph/status` | `slug` | Estado del CodeGraph (indexado o no, counts) |
+| `/codegraph/query` | `slug`, `q`, `top_k`, `max_tokens` | Búsqueda query_smart de símbolos |
 
 ### POST
 
@@ -186,6 +190,12 @@ Salida: línea JSON por stdout con resultado o error.
 | `forja_diff` | — | Mostrar cambios desde último snapshot |
 | `forja_graph` | — | Grafo de dependencias ASCII |
 | `forja_patch` | `file`, `old`, `new` | Edición parcial find+replace |
+| `analyze_intent` | `prompt` | Analiza intent, extrae topic_key, clasifica importancia |
+| `save_observation` | `slug`, `type`, `topic_key`, `content`, `why`, `where`, `outcome`, `scope` | Guarda observación en brain |
+| `get_observation` | `slug`, `topic_key`, `limit`, `global` | Busca observaciones por topic_key |
+| `get_last_good` | `slug`, `topic_key` | Último estado exitoso de un topic |
+| `plan_or_act` | `question`, `slug`, `confidence` | Decide si asumir o planificar |
+| `compact_memory` | `slug` | Compacta GUARDIAN.md |
 
 ---
 
@@ -203,8 +213,12 @@ Salida: línea JSON por stdout con resultado o error.
 | Genoma | `guardian_genome.py` | Carga de identity.yaml, ramas, forks, diff, list |
 | Conciencia | `guardian_conciencia.py` | N1 (score_context, consciousness_action, run_cycle), N2 (evolve, thresholds) |
 | Evolución | `guardian_evolution.py` | evolve_branch, consolidate (memory GC + RAG reindex + learnings) |
-| MCP | `guardian_mcp.py` | JSON-RPC 2.0 server, 9 tool definitions y handlers |
+| MCP | `guardian_mcp.py` | JSON-RPC 2.0 server, tool definitions y handlers |
 | Forja | `guardian_forja.py` | Meta-módulo del arquitecto: scaffold, validación, impacto, edición, diagnóstico |
+| Migration | `guardian_migration_v3_layout.py` | Migración de proyectos de v3 a v4 layout |
+| Brain Symbols | `guardian_brain_symbols.py` | CodeGraph: tree-sitter AST indexer, lookup, query_smart |
+| Brain Advisor | `guardian_brain_advisor.py` | Contexto dinámico: build_context, advise_on_action |
+| Observer | `guardian_observer.py` | Captura de eventos, sanitización, clasificación |
 
 ---
 
@@ -253,10 +267,13 @@ tests/
 ├── test_memory.py        # ~40 tests — memory CRUD, TF-IDF, sessions
 ├── test_config.py        # ~10 tests — config parsing, CLI
 ├── test_integration.py   # ~20 tests — web, absorb integration
-└── test_backend.py       # 28 tests — conciencia, genoma, evolución, MCP
+├── test_backend.py       # 28 tests — conciencia, genoma, evolución, MCP
+├── test_brain.py         # Tests de brain schema, advisor, symbols
+├── test_phase3.py        # Tests de cognitive memory phase 3
+├── test_phase4.py        # Tests de cognitive memory phase 4
+├── test_v4.py            # 19 tests — v4: filesystem, genoma, conciencia, observer, advisor, codegraph
+└── test_v4_e2e.py        # Tests end-to-end del ciclo v4 completo
 ```
-
-**Total: 119 tests (2 fallos pre-existentes de aislamiento al ejecutar suite completa)**
 
 ---
 
@@ -283,13 +300,26 @@ El plugin se auto-descubre desde `.opencode/plugins/`.
 | `guardian_mode` | Cambiar modo plan/build |
 | `guardian_check_permission` | Verificar si una operación está permitida |
 | `guardian_why_blocked` | Explicar por qué un archivo está bloqueado |
+| `guardian_query_smart` | CodeGraph: buscar símbolos del proyecto por nombre/signature |
+| `guardian_codegraph_index` | CodeGraph: indexar el AST del proyecto con tree-sitter |
+| `guardian_codegraph_status` | CodeGraph: ver estado del índice y conteo de símbolos |
+| `guardian_analyze_intent` | Analiza intent del usuario, extrae topic_key, clasifica importancia |
+| `guardian_save_observation` | Guarda observación con metadata (type, topic_key, outcome, why, where) |
+| `guardian_get_observation` | Busca observaciones por topic_key en brain |
+| `guardian_get_last_good` | Obtiene última observación exitosa de un topic |
+| `guardian_plan_or_act` | Decide si va directo o necesita planificación compleja |
+| `guardian_compact_memory` | Compacta GUARDIAN.md borrando líneas viejas |
 
-### Hooks
+### Hooks (v4.1.0 — 6 hooks)
 
-- **`session.created`**: Inyecta contexto del proyecto al inicio
+- **`session.created`**: Solo inyecta GUARDIAN.md (~25 líneas). NADA de Advisor.
 - **`permission.ask`**: Intercepta writes/bash en módulos protegidos, consulta backend con cache LRU (5min TTL, max 200 entries)
+- **`chat.message`**: Analiza intent + busca observaciones relevantes + auto-save si > 0.5 importancia
+- **`tool.execute.before`**: Advisor advierte si una acción es riesgosa
+- **`tool.execute.after`**: Observa resultado + guarda observación si fue edit/write
 - **`tui.prompt.append`**: Detecta keywords para auto-cambiar modo plan/build
-- **`experimental.session.compacting`**: Re-inyecta contexto antes de compactación
+- **`experimental.session.compacting`**: Re-inyecta GUARDIAN.md antes de compactar
+- **`shell.env`**: Setea GUARDIAN_HOME y GUARDIAN_DATA en el entorno
 
 ### Niveles de guardia en módulos
 

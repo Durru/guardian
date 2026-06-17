@@ -2,6 +2,6 @@
   "name": "guardian-opencode-plugins",
   "private": true,
   "dependencies": {
-    "@opencode-ai/plugin": "latest"
+    "@opencode-ai/plugin": "1.16.2"
   }
 }

@@ -38,6 +38,7 @@ import sys
 import os
 import hashlib
 import re
+import time
 import subprocess
 import shlex
 import shutil
@@ -83,7 +84,8 @@ GLOBAL_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_global.py"
 CAPABILITY_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_capability.py"
 PUBLISH_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_publish.py"
 LINEAGE_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_lineage.py"
-MIGRATION_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_brain_migration.py"
+MIGRATION_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_migration_v3_layout.py"
+BRAIN_MIGRATION_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_brain_migration.py"
 DEFAULT_WEB_PORT = 7878
 INSTALL_SCRIPT = GUARDIAN_DIR / "install.sh"
 
@@ -1432,40 +1434,27 @@ def cmd_post_deploy(slug, auto=False):
 
 # ── cmd_docs_scan ──────────────────────────────────────────────
 
-DOC_TEMPLATES = {
-    "AGENTS.md": "AGENTS.md.template",
-    "BACKEND.md": "BACKEND.md.template",
-    "FRONTEND.md": "FRONTEND.md.template",
-    "FEATURES.md": "FEATURES.md.template",
-    "UI.md": "UI.md.template",
-    "CONSTRAINTS.md": "CONSTRAINTS.md.template",
-}
-
-def _render_and_maybe_write(content, dest, generated):
-    """Write content to dest only if different from current file content."""
-    new_hash = hashlib.sha256(content.encode()).hexdigest()
-    existing_hash = shared.hash_file(dest)
-    if existing_hash == new_hash:
-        print(shared._("docs_unchanged", name=dest.name))
-        return
-    dest.write_text(content, encoding="utf-8")
-    print(shared._("docs_generated", name=dest.name))
-    generated.append(str(dest.relative_to(dest.parents[1]) if len(dest.parents) > 1 else dest.name))
-
-
 def cmd_docs_scan(slug):
+    """v4.1.0: Detecta stack del proyecto y lo escribe en el brain persistente.
+
+    Ya NO genera templates de documentación. En su lugar:
+    1. Detecta stack del proyecto
+    2. Escribe stack, commands, rules como nodos semánticos en el brain
+    3. Re-genera GUARDIAN.md compacto desde los nodos del brain
+    4. Indexa RAG
+    """
+    import guardian_brain as gb
+    import guardian_brain_schema as gschema
+
     config = _read_config(slug)
     if not config:
         return err(f"Proyecto '{slug}' no encontrado.")
 
-    root = Path(config.get("project_root", "."))
-    docs_dir = root / "docs"
-    docs_dir.mkdir(parents=True, exist_ok=True)
+    gschema.init_project(slug)
 
     stack = config.get("stack", {})
     if isinstance(stack, str):
         stack = {}
-    detected = stack.get("detected", "python")
     framework = stack.get("framework", "")
     runtime = stack.get("runtime", "python")
     test_cmd = stack.get("test", "")
@@ -1473,136 +1462,61 @@ def cmd_docs_scan(slug):
     build_cmd = stack.get("build", "")
     dev_cmd = stack.get("dev", "")
 
-    docs_avail = _get_docs_available(config)
-    if not docs_avail:
-        docs_avail = {"frontend": False, "backend": False, "ui": False, "features": False}
+    stack_str = f"{runtime}/{framework}" if framework else runtime
+    if test_cmd:
+        stack_str += f"/test:{test_cmd}"
 
-    frontend_template = docs_avail.get("frontend", False)
-    backend_template = docs_avail.get("backend", False)
-    ui_template = docs_avail.get("ui", False)
-    features_template = docs_avail.get("features", False)
+    # Write stack as semantic node
+    gb.write(slug, "semantic", {
+        "kind": "stack",
+        "topic_key": "project/stack",
+        "content": stack_str,
+        "importance": 0.7,
+        "confidence": 1.0,
+    })
 
-    generated = []
+    # Write commands as procedural nodes
+    for cmd_name, cmd_val in [("build", build_cmd), ("test", test_cmd),
+                               ("lint", lint_cmd), ("dev", dev_cmd)]:
+        if cmd_val:
+            gb.write(slug, "procedural", {
+                "kind": "workflow" if cmd_name != "dev" else "dev_server",
+                "topic_key": f"workflow/{cmd_name}",
+                "content": f"{cmd_name}: {cmd_val}",
+                "importance": 0.5,
+                "confidence": 1.0,
+            })
 
-    fe_tools = _infer_frontend_tools(framework)
-    be_tools = _infer_backend_tools(framework)
-    forbidden_deps = _infer_forbidden_deps(framework)
+    # Write project goal if not exists
+    goal = gb.list_nodes(slug, "semantic", filters={"kind": "goal"}, limit=1)
+    project_type = config.get("project", {}).get("type", "webapp")
+    if not goal:
+        gb.write(slug, "semantic", {
+            "kind": "goal",
+            "topic_key": "project/goal",
+            "content": f"Proyecto {slug} — {project_type} ({stack_str})",
+            "importance": 0.8,
+            "confidence": 1.0,
+        })
 
-    protected = config.get("protected_paths", [])
-    if not isinstance(protected, list):
-        protected = []
+    # Write constraints
     rules = config.get("rules", [])
-    if not isinstance(rules, list):
-        rules = []
+    if rules:
+        gb.write(slug, "semantic", {
+            "kind": "constraint",
+            "topic_key": "project/constraints",
+            "content": "; ".join(rules[:5]),
+            "importance": 0.8,
+            "confidence": 1.0,
+        })
 
-    for doc_name, template_name in DOC_TEMPLATES.items():
-        if doc_name == "AGENTS.md":
-            template_path = TEMPLATE_DIR / template_name
-            if template_path.exists():
-                variables = {
-                    "slug": slug,
-                    "project_type": config.get("project", {}).get("type", "webapp"),
-                    "runtime": runtime,
-                    "framework": framework if framework else "—",
-                    "db": config.get("project", {}).get("database", "—"),
-                    "dev_cmd": dev_cmd or "—",
-                    "test_cmd": test_cmd or "—",
-                    "lint_cmd": lint_cmd or "—",
-                    "build_cmd": build_cmd or "—",
-                    "docs_list": "",
-                }
-                docs_list = []
-                for d in ["BACKEND.md", "FRONTEND.md", "FEATURES.md", "UI.md", "CONSTRAINTS.md"]:
-                    if (docs_dir / d).exists() or d == "CONSTRAINTS.md":
-                        docs_list.append(f"- [{d}](docs/{d})")
-                variables["docs_list"] = "\n".join(docs_list)
-                content = _render_template(template_path.read_text(encoding="utf-8", errors="replace"), variables)
-                dest = root / doc_name
-                _render_and_maybe_write(content, dest, generated)
+    # Re-generate compact GUARDIAN.md from brain nodes
+    gb.regenerate_guardian_md(slug)
 
-        elif doc_name == "CONSTRAINTS.md":
-            template_path = TEMPLATE_DIR / template_name
-            if template_path.exists():
-                variables = {
-                    "scope_paths": "\n".join(f"- {r}" for r in rules[:10]) if rules else "- (ninguno)",
-                    "protected_paths": "\n".join(f"- {p}" for p in protected) if protected else "- (ninguno)",
-                    "forbidden_deps": "\n".join(f"- {d}" for d in forbidden_deps) if forbidden_deps else "- (ninguna)",
-                    "forbidden_patterns": "",
-                    "tech_debt_items": "- (ninguno)",
-                }
-                content = _render_template(template_path.read_text(encoding="utf-8", errors="replace"), variables)
-                dest = docs_dir / doc_name
-                _render_and_maybe_write(content, dest, generated)
-
-        elif doc_name == "BACKEND.md" and backend_template:
-            template_path = TEMPLATE_DIR / template_name
-            if template_path.exists():
-                variables = {
-                    "runtime": runtime,
-                    "framework": framework if framework else "—",
-                    "db": config.get("project", {}).get("database", "PostgreSQL"),
-                    "validator": be_tools.get("validator", "—"),
-                    "orm": be_tools.get("orm", "—"),
-                }
-                content = _render_template(template_path.read_text(encoding="utf-8", errors="replace"), variables)
-                dest = docs_dir / doc_name
-                _render_and_maybe_write(content, dest, generated)
-
-        elif doc_name == "FRONTEND.md" and frontend_template:
-            template_path = TEMPLATE_DIR / template_name
-            if template_path.exists():
-                variables = {
-                    "runtime": runtime,
-                    "framework": framework if framework else "—",
-                    "state_library": fe_tools.get("state", "—"),
-                    "server_state_library": fe_tools.get("server_state", "—"),
-                    "api_client": fe_tools.get("api", "—"),
-                }
-                content = _render_template(template_path.read_text(encoding="utf-8", errors="replace"), variables)
-                dest = docs_dir / doc_name
-                _render_and_maybe_write(content, dest, generated)
-
-        elif doc_name == "FEATURES.md" and features_template:
-            template_path = TEMPLATE_DIR / template_name
-            if template_path.exists():
-                variables = {
-                    "framework": framework if framework else "—",
-                }
-                content = _render_template(template_path.read_text(encoding="utf-8", errors="replace"), variables)
-                dest = docs_dir / doc_name
-                _render_and_maybe_write(content, dest, generated)
-
-        elif doc_name == "UI.md" and ui_template:
-            template_path = TEMPLATE_DIR / template_name
-            if template_path.exists():
-                variables = {
-                    "framework": framework if framework else "—",
-                }
-                content = _render_template(template_path.read_text(encoding="utf-8", errors="replace"), variables)
-                dest = docs_dir / doc_name
-                _render_and_maybe_write(content, dest, generated)
-
-    docs_config = config.get("docs", {})
-    if not isinstance(docs_config, dict):
-        docs_config = {}
-    docs_config["last_scan"] = _ts()
-    docs_config["frontend"] = frontend_template
-    docs_config["backend"] = backend_template
-    docs_config["ui"] = ui_template
-    docs_config["features"] = features_template
-    config["docs"] = docs_config
-    _write_config(slug, config)
-
-    if generated:
-        print(_("  📄 Documentos generados ({}):", len(generated)))
-        for g in generated:
-            print(_("     ✓ {g}", g=g))
-    else:
-        print(shared._("docs_up_to_date"))
-
-    _run_audit_record(slug, "docs_scan", generated, "ok", f"Docs scan: {len(generated)} archivo(s)")
+    _run_audit_record(slug, "docs_scan", [], "ok", "Docs scan v4.1.0: stack escrito en brain + GUARDIAN.md regenerado")
     try:
-        subprocess.run([sys.executable, str(RAG_SCRIPT), "index", "--slug", slug, "--force"], capture_output=True, text=True, timeout=60)
+        subprocess.run([sys.executable, str(RAG_SCRIPT), "index", "--slug", slug, "--force"],
+                       capture_output=True, text=True, timeout=60)
     except Exception:
         pass
     return 0
@@ -2217,14 +2131,60 @@ def cmd_update(slug, cmd_args):
 
     This is how the user absorbs a new version of Guardian. The genome
     (which the creator edits) is the ONLY thing that touches the user branch.
+    Shows diff between current and new genome version.
+    Creates a backup of branch.json before applying.
     """
+    import shutil
     import guardian_genome
     import guardian_shared as shared
     from pathlib import Path
     branch = shared.user_branch_path()
+    branch_file = branch / "branch.json"
+
+    # Read current version
+    current_ver = "none"
+    if branch_file.exists():
+        try:
+            with open(branch_file) as f:
+                cur = json.load(f)
+            current_ver = str(cur.get("genome_version", "unknown"))
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    # Read new genome version
+    genome = guardian_genome.load_genome()
+    new_ver = str(genome.get("schema", {}).get("schema_version", 4))
+
+    print(f"  Current genome version: {current_ver}")
+    print(f"  New genome version:     {new_ver}")
+
+    if current_ver == new_ver:
+        print("  ✓ Already up to date.")
+        return 0
+
+    # Backup current branch.json before applying
+    if branch_file.exists():
+        backup = branch / f"branch.json.bak.{int(time.time())}"
+        shutil.copy2(str(branch_file), str(backup))
+        print(f"  ✓ Backup saved: {backup.name}")
+
+    # Apply
     result = guardian_genome.apply_to_user_branch(branch)
     print(f"  ✓ Update applied to {result['branch']}")
     print(f"  Genome version: {result['genome_version']}")
+
+    # Show diff of principles / thresholds if available
+    old_principles = cur.get("principles", []) if 'cur' in dir() else []
+    new_principles = genome.get("identity", {}).get("principles", [])
+    if old_principles and new_principles and old_principles != new_principles:
+        print("\n  Principles changed:")
+        for p in new_principles:
+            if p not in old_principles:
+                print(f"    + {p}")
+        for p in old_principles:
+            if p not in new_principles:
+                print(f"    - {p}")
+
     return 0
 
 
@@ -2274,7 +2234,11 @@ def cmd_evolve(slug, cmd_args):
 # ── cmd_activate ───────────────────────────────────────────────
 
 def cmd_activate(slug=None):
-    """Activar Guardian en un proyecto: setup → branch → absorb → docs → conciencia."""
+    """Activar Guardian en un proyecto: setup → branch → brain → absorb → docs → codegraph → conciencia."""
+    import guardian_brain_schema
+    import guardian_brain_symbols
+    import guardian_migration_v3_layout as migration_mod
+
     slug = slug or _find_slug()
     if not slug:
         cwd = Path.cwd()
@@ -2288,9 +2252,24 @@ def cmd_activate(slug=None):
         cmd_setup(slug)
         config = _read_config(slug)
 
+    # v4: Detect v3 layout and offer migration
+    mig_status = migration_mod.status(slug)
+    if mig_status.get("needs_migration"):
+        print(_("  ⚠️  Se detectaron datos en formato v3. ¿Migrar a v4?"))
+        print(_("     Ejecutá: guardian migrate status {slug} para más info.", slug=slug))
+        print(_("     Ejecutá: guardian migrate migrate {slug} para migrar.", slug=slug))
+
     print(_("  Creando rama de evolución..."))
     state, path = guardian_genome.fork_branch(slug)
     print(_("    Rama: {path}", path=str(path)))
+
+    # v4: Initialize brain schema (creates SQLite DBs + tables)
+    print(_("  Inicializando brain (base de datos cognitiva)..."))
+    try:
+        guardian_brain_schema.init_project(slug)
+        print(_("    ✓ Brain inicializado"))
+    except Exception as e:
+        print(_("    ⚠️  Error inicializando brain: {e}", e=e))
 
     print(_("  Escaneando skills globales..."))
     subprocess.run([sys.executable, str(ABSORB_SCRIPT), "scan"], capture_output=True, text=True, timeout=60)
@@ -2306,6 +2285,18 @@ def cmd_activate(slug=None):
     print(_("  Escaneando docs..."))
     subprocess.run([sys.executable, str(Path(__file__).resolve()), "docs", "scan", slug],
                    capture_output=True, text=True, timeout=60)
+
+    # v4: Index project codegraph (tree-sitter AST)
+    print(_("  Indexando CodeGraph (AST del proyecto)..."))
+    try:
+        source_root = Path(config.get("project_root", ""))
+        if source_root.exists():
+            result = guardian_brain_symbols.index_project(slug, source_root, full=True)
+            print(_("    ✓ {symbols} símbolos indexados en {duration}s", symbols=result.get("symbols", 0), duration=result.get("duration_s", 0)))
+        else:
+            print(_("    ⚠️  project_root no encontrado: {path}", path=source_root))
+    except Exception as e:
+        print(_("    ⚠️  Error indexando CodeGraph: {e}", e=e))
 
     print(_("  Ciclo de conciencia inicial..."))
     mode_state = shared.read_mode_state(slug)
@@ -3068,6 +3059,74 @@ def cmd_migrate(args):
         return err(f"No se encontró: {MIGRATION_SCRIPT}")
 
 
+def cmd_codegraph(slug, cmd_args):
+    """guardian codegraph <index|query|status> [slug] [query...]"""
+    if not cmd_args:
+        print("Uso: guardian codegraph <index|query|status> [slug] [query...]")
+        return 1
+    sub = cmd_args[0]
+    subargs = cmd_args[1:]
+    import guardian_brain_symbols as symbols
+
+    if sub == "index":
+        s = subargs[0] if subargs else slug
+        if not s:
+            return err("Slug requerido. Uso: guardian codegraph index <slug>")
+        from pathlib import Path as _Path
+        config = _read_config(s)
+        if not config:
+            return err(f"Proyecto '{s}' no encontrado.")
+        source_root = _Path(config.get("project_root", ""))
+        full = "--full" in subargs or "-f" in subargs
+        t0 = time.time()
+        result = symbols.index_project(s, source_root, full=full)
+        elapsed = round(time.time() - t0, 2)
+        print(f"  ✓ CodeGraph indexed ({'full' if full else 'incremental'}) in {elapsed}s")
+        print(f"    Files: {result.get('files_indexed') or result.get('files_reindexed', 0)}")
+        print(f"    Symbols: {result.get('symbols') or result.get('symbols_updated', 0)}")
+        if "edges" in result:
+            print(f"    Edges: {result['edges']}")
+        return 0
+
+    elif sub == "query":
+        s = subargs[0] if subargs else slug
+        q_parts = subargs[1:]
+        if not s or not q_parts:
+            return err("Uso: guardian codegraph query <slug> <query...>")
+        query = " ".join(q_parts)
+        result = symbols.query_smart(s, query, top_k=10)
+        if result:
+            print(result)
+        else:
+            print(f"  No symbols found for '{query}' in '{s}'")
+        return 0
+
+    elif sub == "status":
+        s = subargs[0] if subargs else slug
+        if not s:
+            return err("Slug requerido.")
+        cg = symbols.get_codegraph(s)
+        has = cg.has_index()
+        print(f"  CodeGraph for '{s}': {'indexed' if has else 'not indexed'}")
+        if has:
+            try:
+                con = cg._conn()
+                count = con.execute("SELECT COUNT(*) FROM codegraph_symbols").fetchone()[0]
+                langs = con.execute(
+                    "SELECT language, COUNT(*) FROM codegraph_symbols GROUP BY language"
+                ).fetchall()
+                con.close()
+                print(f"    Symbols: {count}")
+                for lang, cnt in langs:
+                    print(f"      {lang}: {cnt}")
+            except Exception as e:
+                print(f"    Error reading stats: {e}")
+        return 0
+
+    else:
+        return err(f"Subcomando codegraph no válido: '{sub}'. Usá: index, query, status")
+
+
 # ── cmd_memory, cmd_absorb, cmd_stack ───────────────────────────
 
 def cmd_memory(args):
@@ -3177,7 +3236,7 @@ def main():
         print("Usage: guardian <command> [args...]")
         print()
         print("Proyecto:")
-        print("  activate [slug]              Activar Guardian (setup + branch + absorb + docs + conciencia)")
+        print("  activate [slug]              Activar Guardian (setup + branch + brain + absorb + docs + codegraph + conciencia)")
         print("  detect                       Detectar proyecto actual")
         print("  status [slug]                Dashboard del proyecto")
         print("  check [slug]                 Verificar reglas y paths protegidos")
@@ -3194,6 +3253,7 @@ def main():
         print("Workflow AI:")
         print("  context [opts] [slug]        Contexto del proyecto para AI")
         print("                                --rag <query> añade búsqueda RAG (solo --json)")
+        print("  codegraph <index|query|status> [slug]  CodeGraph: indexar/buscar símbolos del proyecto")
         print("  rag <query> [--slug] [opts]  Búsqueda RAG en docs + código + memoria")
         print()
         print("Web:")
@@ -3246,7 +3306,7 @@ def main():
         print("  clone <template> <new>                                 Clonar desde template")
         print("  fork <parent> <child>                                  Fork con linaje")
         print("  lineage <slug>                                          Ver árbol genealógico")
-        print("  migrate <status|migrate|rollback> <slug>                Migrar v2 → v3")
+        print("  migrate <status|migrate|rollback> <slug>                Migrar v3 → v4 layout")
         print()
         print("Stack:")
         print("  build|dev|test|lint|typecheck|deploy|logs [slug]")
@@ -3396,6 +3456,10 @@ def main():
     if cmd == "branch":
         slug, rest = _resolve_slug(cmd_args)
         return cmd_branch(slug, rest)
+
+    if cmd == "codegraph":
+        slug, rest = _resolve_slug(cmd_args)
+        return cmd_codegraph(slug, rest)
 
     if cmd == "evolve":
         slug, rest = _resolve_slug(cmd_args)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Nexxoria Guardian v3 — install.sh
-# Zero-deps cognitive memory ecosystem for OpenCode.
+# Nexxoria Guardian v4 — install.sh
+# Cognitive OS for AI sessions: razona, evoluciona, completa.
 #
 # Modes:
 #   --system (default): install to /opt + /var (requires sudo)
@@ -10,7 +10,7 @@
 #   --version=X.Y.Z:    install a specific tag/branch (default: main)
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/Durru/guardian/v3.0.0/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/Durru/guardian/v4.0.0/install.sh | sudo bash
 #   curl -fsSL ... | bash -s -- --user
 #   ./install.sh --dev
 
@@ -64,8 +64,8 @@ banner() {
     echo ""
     echo -e "${GREEN}${BOLD}"
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║          🛡️  Nexxoria Guardian v3 — Installer              ║"
-    echo "║          Cognitive memory ecosystem · zero deps          ║"
+    echo "║          🛡️  Nexxoria Guardian v4 — Installer              ║"
+    echo "║          Cognitive OS · tree-sitter · codegraph AST      ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -395,7 +395,7 @@ setup_env_vars() {
     else
         cat >> "$profile_file" << EOF
 
-# Nexxoria Guardian v3
+# Nexxoria Guardian v4
 export GUARDIAN_HOME="$GUARDIAN_HOME"
 export GUARDIAN_DATA="$GUARDIAN_DATA"
 export GUARDIAN_PORT="9787"
@@ -430,7 +430,7 @@ sys.path.insert(0, 'lib')
 for m in list(sys.modules.keys()):
     if m.startswith('guardian'):
         del sys.modules[m]
-mods = [
+    mods = [
     'guardian_brain_schema', 'guardian_brain',
     'guardian_knowledge', 'guardian_specialization', 'guardian_plan',
     'guardian_maintain', 'guardian_global', 'guardian_capability',
@@ -440,6 +440,11 @@ mods = [
     'guardian_memory', 'guardian_rag',
     'guardian_backend', 'guardian_mcp', 'guardian_web',
     'guardian_shared', 'guardian',
+    # v4 modules
+    'guardian_migration_v3_layout',
+    'guardian_brain_symbols',
+    'guardian_brain_advisor',
+    'guardian_observer',
 ]
 ok = 0
 fails = []
@@ -461,10 +466,10 @@ for f in fails:
         echo "$test_output" | sed 's/^/      /'
         return 1
     fi
-    if [ "$ok_count" = "23" ]; then
-        ok "Zero-deps confirmado: $ok_count/23 módulos importan (todo stdlib)"
+    if [ "$ok_count" = "27" ]; then
+        ok "Módulos: $ok_count/27 importan correctamente"
     else
-        warn "Solo $ok_count/23 módulos importan"
+        warn "Solo $ok_count/27 módulos importan"
         echo "$test_output" | sed 's/^/      /'
     fi
 }
@@ -528,7 +533,7 @@ verify_install() {
 
 do_uninstall() {
     banner
-    section "Desinstalando Guardian v3"
+    section "Desinstalando Guardian v4"
     warn "Esto va a borrar:"
     warn "  - /opt/nexxoria-guardian (o ~/.local/share/nexxoria-guardian)"
     warn "  - /var/lib/nexxoria-guardian (o ~/.local/state/nexxoria-guardian)"
@@ -648,7 +653,75 @@ except Exception as e:
     warn "Las variables GUARDIAN_HOME/DATA siguen en tu .bashrc/.zshrc. Borralas manualmente si querés."
 
     echo ""
-    ok "🛡️  Guardian v3 desinstalado."
+    ok "🛡️  Guardian v4 desinstalado."
+}
+
+# ── Register Guardian agent in OpenCode ────────────────────────────
+
+install_agent() {
+    if [ "$NO_OPENCODE" = true ]; then
+        return
+    fi
+    section "Registrando agente Guardian en OpenCode"
+    local oc_config="${HOME}/.config/opencode/opencode.json"
+    if [ ! -f "$oc_config" ]; then
+        warn "opencode.json no encontrado en $oc_config"
+        return
+    fi
+    if grep -q '"guardian"' "$oc_config" 2>/dev/null && grep -q '"mode": "primary"' "$oc_config" 2>/dev/null; then
+        ok "Agente Guardian ya registrado"
+        return
+    fi
+    # Run the Python fragment that adds agent entries
+    "$PYTHON" -c "
+import json
+path = '$oc_config'
+with open(path) as f:
+    cfg = json.load(f)
+agents = cfg.setdefault('agent', {})
+if 'guardian' not in agents:
+    agents['guardian'] = {
+        'description': '🧠 Conciencia de Nexxoria Guardian — percibe, decide, delega, reflexiona',
+        'mode': 'primary',
+        'plugins': ['nexxoria-guardian'],
+        'prompt': '{file:$GUARDIAN_HOME/prompts/guardian-agent.md}',
+        'permission': {
+            'task': {
+                '*': 'deny',
+                'guardian-executor': 'allow',
+                'guardian-researcher': 'allow',
+                'guardian-memory': 'allow',
+                'guardian-observer': 'allow',
+                'sdd-propose': 'allow',
+                'sdd-spec': 'allow',
+                'sdd-design': 'allow',
+                'sdd-tasks': 'allow',
+                'sdd-apply': 'allow',
+                'sdd-verify': 'allow',
+                'sdd-archive': 'allow',
+            }
+        },
+        'tools': {'read': True, 'task': True},
+    }
+for key, desc, prompt in [
+    ('guardian-executor', '🔧 Ejecuta cambios en el proyecto', 'Ejecutás las instrucciones de la conciencia. Usás bash, edit, write. Al terminar, resumís en 3 líneas.'),
+    ('guardian-researcher', '🔍 Investiga temas y analiza código', 'Investigás a fondo el tema asignado. Usás bash y read. Devolvés hallazgos en 5 líneas máximo.'),
+    ('guardian-memory', '💾 Gestiona la memoria persistente de Guardian', 'Usás guardian CLI para operaciones de memoria. Devolvés el resultado exacto.'),
+    ('guardian-observer', '👁️ Clasifica eventos y extrae topics', 'Clasificás el evento recibido: topic_key, importancia.'),
+]:
+    if key not in agents:
+        agents[key] = {
+            'description': desc,
+            'hidden': True,
+            'mode': 'subagent',
+            'prompt': prompt,
+            'tools': {'read': True, 'bash': True} if key != 'guardian-observer' else {'read': True},
+        }
+with open(path, 'w') as f:
+    json.dump(cfg, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+print('ok')
+" 2>/dev/null && ok "Agente Guardian registrado en OpenCode" || warn "No se pudo registrar el agente"
 }
 
 # ── Final message ───────────────────────────────────────────────────
@@ -658,7 +731,7 @@ final_message() {
     if [ "$MODE" = "dev" ]; then
         echo -e "${GREEN}${BOLD}"
         echo "╔══════════════════════════════════════════════════════════╗"
-        echo "║  ✅ Modo --dev: Guardian v3 listo en el repo           ║"
+        echo "║  ✅ Modo --dev: Guardian v4 listo en el repo           ║"
         echo "║                                                          ║"
         echo "║  Para usar:                                              ║"
         echo "║    cd $GUARDIAN_HOME"
@@ -671,13 +744,13 @@ final_message() {
     else
         echo -e "${GREEN}${BOLD}"
         echo "╔══════════════════════════════════════════════════════════╗"
-        echo "║  ✅ Guardian v3 instalado correctamente                  ║"
+        echo "║  ✅ Guardian v4 instalado correctamente                  ║"
         echo "║                                                          ║"
         echo "║  Próximos pasos:                                         ║"
         echo "║    1. Reiniciá tu terminal (o: source ~/.bashrc)         ║"
         echo "║    2. En tu proyecto:                                    ║"
         echo "║         cd /ruta/a/mi/proyecto                           ║"
-        echo "║         guardian start                                   ║"
+        echo "║         guardian activate                                ║"
         echo "║                                                          ║"
         echo "║  Si tenés código existente:                              ║"
         echo "║         guardian activate                                ║"
@@ -712,6 +785,7 @@ main() {
     install_systemd
     setup_env_vars
     install_deps
+    install_agent
     verify_install
     final_message
 }

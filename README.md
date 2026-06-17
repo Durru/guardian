@@ -1,25 +1,29 @@
-# Nexxoria Guardian v3
+# Nexxoria Guardian v4
 
-**Universal project guardian for OpenCode AI sessions — con memoria cognitiva.**
+**Sistema operativo cognitivo para sesiones de IA — razona, evoluciona y completa a cualquier LLM.**
 
-Guardian es un ser orgánico que protege, guía y evoluciona tus proyectos.
-v3 introduce **memoria cognitiva persistente**: el cerebro digital que recuerda, olvida, reflexiona y evoluciona entre proyectos y sesiones.
-
----
-
-## Características v3
-
-- **5 niveles de memoria** — Working Memory + 4 project DBs (semantic/episodic/procedural/reflection) + 3 global DBs
-- **GUARDIAN.md** — archivo ≤200 líneas cargado en cada sesión, regenerado automáticamente
-- **Governor** — memoria con importance/TTL/duplicate/contradiction (puede olvidar)
-- **Reflection Agent** — post-sesión: extrae lecciones, actualiza procedural/reflection
-- **5 modes** — read, plan, build, commit, review
-- **Specializations** — stack-aware: odoo, nextjs, fastapi, postgres, python
-- **OpenSpec + planes ad-hoc** — state machine para propuestas
-- **Publish/Clone/Fork** — sanitización + linaje de proyectos
-- **Capability routing** — model card con EMA, decide si delegar al LLM
+Guardian v4 es un ser orgánico que vive entre el humano, el LLM y el proyecto. No compite con el LLM: lo complementa. El LLM genera código; Guardian recuerda, indexa, razona sobre el pasado, conoce al usuario y no alucina.
 
 ---
+
+## Los 3 pilares de v4
+
+| Pilar | Qué hace | Cómo |
+|-------|----------|------|
+| **Razona** | Conciencia trazable con `sources` | `Conciencia.decide()` retorna decisiones con fuentes verificables |
+| **Evoluciona** | Genoma + rama de usuario | `guardian update` absorbe el nuevo genoma; la rama evoluciona sin perder datos |
+| **Completa al LLM** | Advisor + Observer + CodeGraph | Contexto dinámico (5-15 líneas), eventos capturados, mapa AST del proyecto |
+
+## Características v4
+
+- **🧠 Conciencia N1+N2** — ciclo percibir→decidir→reflexionar con trazabilidad. ASSUME solo con `confidence >= 0.8` Y al menos 1 source
+- **📖 CodeGraph (tree-sitter)** — mapa AST real del proyecto en Python, TypeScript, JavaScript, Go. `query_smart` busca símbolos con firmas y docstrings
+- **💡 Advisor** — contexto dinámico al LLM. Retorna `""` si no hay nada relevante (no ensucia la ventana de contexto)
+- **👁️ Observer** — captura eventos del LLM y del usuario, sanitiza secrets (API keys, JWT, tokens), clasifica prompts
+- **🧬 Genoma en 3 archivos** — `identity.yaml` (inmutable), `schema.yaml`, `consciousness.yaml`
+- **🔐 Sistema de permisos** — módulos con guardias: `blocked`, `readonly`, `conciencia`, `allowed`
+- **🔄 Migración v3→v4** — `guardian migrate migrate <slug>` preserva todos los datos
+- **🧪 ~260 tests** — test unitarios + E2E del ciclo completo
 
 ## Requisitos
 
@@ -46,16 +50,17 @@ sudo bash install.sh --uninstall   # limpia todo (con safety check)
 ### Qué hace `install.sh`
 
 1. Detecta OS + Python + OpenCode
-2. Copia el repo a `/opt/nexxoria-guardian/` (o `~/.local/nexxoria-guardian/`)
+2. Copia el repo a `/opt/nexxoria-guardian/`
 3. Crea `/var/lib/nexxoria-guardian/` para datos runtime
 4. Crea symlink `/usr/local/bin/guardian`
 5. Registra servicio systemd (modo `--system`)
 6. Instala skill en `~/.agents/skills/nexxoria-guardian/`
 7. Instala comando `@guardian` en OpenCode
 8. Registra MCP server
-9. Verifica instalación con `doctor`
+9. Instala tree-sitter (Python, TypeScript, JavaScript, Go)
+10. Verifica instalación con import check + tests
 
-**Después de instalar, reiniciá OpenCode y decí "activo guardian".**
+**Después de instalar, reiniciá OpenCode y ejecutá `guardian activate` en tu proyecto.**
 
 ## Uso básico
 
@@ -67,77 +72,103 @@ guardian --help
 cd /ruta/de/mi/proyecto
 guardian activate
 
-# Ver GUARDIAN.md esencial
-guardian brain read
+# Crear CodeGraph (AST del proyecto)
+guardian codegraph index <slug>
 
-# Buscar en memoria
-guardian brain query semantic "fastapi auth"
+# Buscar símbolos en el codegraph
+guardian codegraph query <slug> "UserService"
 
-# Escribir nodo (pasa por el Governor)
-guardian brain write semantic "api auth via JWT" --kind pattern --importance 0.8
+# Migrar datos de v3 a v4
+guardian migrate migrate <slug>
 
-# Activar especialización
-guardian specialization enable odoo
+# Aplicar nuevo genoma
+guardian update
 
-# Diagnosticar proyecto
-guardian maintain
+# Ciclo de conciencia
+guardian conciencia cycle "quiero agregar auth"
 
-# Publicar como template
-guardian publish my-template 1.0.0
+# Ver identidad del genoma
+guardian genome status
+
+# Estado de la rama de evolución
+guardian branch status
 ```
 
 Desde OpenCode:
 ```
 @guardian context --brief
 @guardian mode build
-@guardian brain query "odoo ORM"
-@guardian maintain
+@guardian codegraph query <slug> "Calculator"
 ```
 
 ## Arquitectura
 
 ```
-  CEREBRO (v3):
-    WM: GUARDIAN.md (≤200 líneas, always-loaded)
-    SM/EM/PM/RM: 4 SQLite DBs por proyecto
-    SM-G/PM-G/RM-G: 3 SQLite DBs globales
-    Governor: importance/TTL/dup/contradiction
-    Reflection Agent: post-sesión
-
-  CONCIENCIA:
-    N1: percibir → decidir → reflexionar (modo)
-    N2: meta (calibrar percentiles)
-
-  OJOS: RAG + Specializations + Skills como tomos
-  MANOS: CLI + Git + Hooks
-  PIERNAS: Backend :9787 + Scheduler + API REST
-  NANOS: MCP tools (35 totales)
+                    ┌─────────────────────────────┐
+                    │    CEREBRO (LLM + Razonamiento)  │
+                    │  Conciencia N1 + Advisor + RAG  │
+                    └────────────┬────────────────┘
+                                 │
+    ┌────────────────────────────┼────────────────────────────┐
+    ▼                            ▼                            ▼
+┌──────────┐              ┌──────────┐              ┌────────────────┐
+│ OJOS      │              │ MANOS    │              │ PIERNAS         │
+│ (Contexto │              │ (CLI +   │              │ (Backend :9787  │
+│  RAG +    │              │  Hooks + │              │  + MCP + API)   │
+│  CodeGraph│              │  Git)    │              │                 │
+│  + Skills)│              │          │              │                 │
+└──────────┘              └──────────┘              └────────────────┘
+                                 │
+                            ┌────┴────┐
+                            │ NANOS   │
+                            │ (MCP    │
+                            │  Tools) │
+                            └─────────┘
 ```
 
-## Stack
+### Stack
 
-- **Runtime:** Python 3.9+ (stdlib only, **cero dependencias externas**)
-- **Storage:** SQLite (4 project + 3 global)
-- **Embeddings:** Hashing 256-dim (zero-deps, deterministic)
+- **Runtime:** Python 3.9+
+- **Storage:** SQLite (brain DBs + codegraph)
+- **Dependencias:** tree-sitter, PyYAML
 - **Tests:** pytest
-- **Lint:** ruff
 - **Packaging:** pyproject.toml + install.sh
 
 ## Comandos principales
 
 ```bash
-guardian activate [slug]                 # setup + absorb + conciencia
-guardian brain read|write|query|reflect  # memoria cognitiva
-guardian session start|continue|end      # lifecycle de sesión
-guardian knowledge research|refresh      # research con TTL
-guardian specialization enable|disable   # stack-aware knowledge
-guardian plan new|list|status            # OpenSpec + ad-hoc
-guardian maintain                        # drift + health report
-guardian publish|clone|fork              # distribución
-guardian capability status|routing        # model card
-guardian backend start|stop|status       # servicio
-guardian mode read|plan|build|commit|review
-guardian conciencia cycle                # N1+N2
+# Proyecto
+guardian activate [slug]              # setup + branch + brain + absorb + docs + codegraph + conciencia
+guardian status [slug]                # dashboard del proyecto
+guardian detect                       # detectar proyecto actual
+
+# CodeGraph (v4)
+guardian codegraph index <slug>       # indexar AST del proyecto
+guardian codegraph query <slug> <q>   # buscar símbolos
+guardian codegraph status <slug>      # ver estado del índice
+
+# Conciencia (v4)
+guardian conciencia cycle [question]  # N1 percibir→decidir→reflexionar
+guardian conciencia meta              # N2 meta-evolución
+
+# Migración (v4)
+guardian migrate status <slug>        # detectar datos v3
+guardian migrate migrate <slug>       # migrar v3→v4
+guardian migrate rollback <slug>      # revertir migración
+
+# Genoma
+guardian update                       # aplicar nuevo genoma
+guardian genome status                # ADN del ser
+guardian branch status                # rama de evolución
+guardian propose <kind> <content>     # proponer patrón
+
+# Sistemas
+guardian mode plan|build|status       # modo de operación
+guardian backend start|stop|status    # backend persistente
+guardian rag <query>                  # búsqueda RAG
+guardian context                      # contexto para AI
+guardian memory <args>                # memoria persistente
+guardian forja <sub> [args]           # La Forja (meta-módulo)
 ```
 
 Ayuda completa: `guardian --help` o ver [docs/REFERENCIA.md](docs/REFERENCIA.md).
@@ -146,24 +177,16 @@ Ayuda completa: `guardian --help` o ver [docs/REFERENCIA.md](docs/REFERENCIA.md)
 
 ```bash
 python3 -m pytest tests/ -v
-# 223/223 passing
-```
-
-## Distribución
-
-```bash
-git tag v3.0.0
-git push origin main --tags
+# ~260 tests passing
 ```
 
 ## Documentación
 
-- [docs/PLAN_V3.md](docs/PLAN_V3.md) — Plan maestro v3
-- [docs/CONCEPTOS.md](docs/CONCEPTOS.md) — Filosofía + capa cognitiva
+- [docs/CONCEPTOS.md](docs/CONCEPTOS.md) — Filosofía, ser orgánico, conciencia N1+N2
 - [docs/FLUJOS.md](docs/FLUJOS.md) — Workflows
 - [docs/REFERENCIA.md](docs/REFERENCIA.md) — CLI, API, MCP completos
 - [docs/GUIA.md](docs/GUIA.md) — Inicio rápido
-- [docs/INSTALACION.md](docs/INSTALACION.md) — Instalación detallada
+- [docs/PLAN_V4.md](docs/PLAN_V4.md) — Plan maestro v4
 
 ## Licencia
 

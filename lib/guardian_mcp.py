@@ -464,15 +464,95 @@ TOOLS = [
     },
     {
         "name": "observer_log_prompt",
-        "description": "v4: Observer — loguea un prompt del usuario con razón inferida. Saneado de secrets.",
+        "description": "Log de prompt de usuario via Observer",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "slug": {"type": "string"},
                 "prompt": {"type": "string"},
-                "mode": {"type": "string", "default": "build"},
+                "mode": {"type": "string"},
             },
             "required": ["slug", "prompt"],
+        },
+    },
+    {
+        "name": "analyze_intent",
+        "description": "Analiza el intent del usuario, extrae topic_key y clasifica importancia",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "Mensaje del usuario"},
+            },
+            "required": ["prompt"],
+        },
+    },
+    {
+        "name": "save_observation",
+        "description": "Guarda una observación con metadata completa en el brain",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "type": {"type": "string", "enum": ["decision", "error", "pattern", "architecture", "config", "bugfix"]},
+                "topic_key": {"type": "string"},
+                "content": {"type": "string"},
+                "why": {"type": "string"},
+                "where": {"type": "string"},
+                "outcome": {"type": "string", "enum": ["success", "failure", "warning", "info"]},
+                "scope": {"type": "string", "enum": ["project", "global"]},
+                "tags": {"type": "string"},
+            },
+            "required": ["slug", "type", "topic_key", "content"],
+        },
+    },
+    {
+        "name": "get_observation",
+        "description": "Busca observaciones por topic_key en el brain (proyecto + global)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "topic_key": {"type": "string"},
+                "limit": {"type": "number"},
+                "global": {"type": "boolean"},
+            },
+            "required": ["slug", "topic_key"],
+        },
+    },
+    {
+        "name": "get_last_good",
+        "description": "Obtiene la última observación exitosa para un topic_key",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "topic_key": {"type": "string"},
+            },
+            "required": ["slug", "topic_key"],
+        },
+    },
+    {
+        "name": "plan_or_act",
+        "description": "Evalúa si una request necesita plan complejo o va directo",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "slug": {"type": "string"},
+                "confidence": {"type": "number"},
+            },
+            "required": ["question"],
+        },
+    },
+    {
+        "name": "compact_memory",
+        "description": "Compacta GUARDIAN.md: borra líneas viejas manteniendo las más importantes",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+            },
+            "required": ["slug"],
         },
     },
 ]
@@ -891,6 +971,96 @@ def _handle_call(tool_name, args, id_val):
         advisor = guardian_brain_advisor.Advisor(slug)
         result = advisor.advise_on_action({"tool": tool_name_arg, "args": tool_args, "file": tool_file})
         _respond(id_val, {"slug": slug, "warn": result.get("warn") if result else None, "risk": result.get("risk") if result else None})
+
+    elif tool_name == "analyze_intent":
+        prompt = args.get("prompt", "")
+        if not prompt:
+            _respond(id_val, error={"code": -32602, "message": "prompt required"})
+            return
+        topic_key = guardian_observer.extract_topic_key(prompt)
+        importance = guardian_observer.classify_importance(prompt, "chat.message")
+        _respond(id_val, {
+            "topic_key": topic_key,
+            "importance": round(importance, 2),
+            "has_context": bool(topic_key),
+        })
+
+    elif tool_name == "save_observation":
+        slug = args.get("slug", "")
+        obs_type = args.get("type", "decision")
+        topic_key = args.get("topic_key", "general")
+        content = args.get("content", "")
+        why = args.get("why", "")
+        where = args.get("where", "")
+        outcome = args.get("outcome", "info")
+        scope = args.get("scope", "project")
+        tags = args.get("tags", "")
+        if not slug or not content:
+            _respond(id_val, error={"code": -32602, "message": "slug and content required"})
+            return
+        tags_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+        result = guardian_brain.write_observation(
+            slug, obs_type, topic_key, content,
+            why=why, where=where, outcome=outcome, scope=scope, tags=tags_list,
+        )
+        _respond(id_val, result)
+
+    elif tool_name == "get_observation":
+        slug = args.get("slug", "")
+        topic_key = args.get("topic_key", "")
+        limit = int(args.get("limit", 5))
+        global_too = args.get("global", True)
+        if not slug or not topic_key:
+            _respond(id_val, error={"code": -32602, "message": "slug and topic_key required"})
+            return
+        results = guardian_brain.get_observations(slug, topic_key, limit=limit, global_too=bool(global_too))
+        _respond(id_val, {"slug": slug, "topic_key": topic_key, "observations": results})
+
+    elif tool_name == "get_last_good":
+        slug = args.get("slug", "")
+        topic_key = args.get("topic_key", "")
+        if not slug or not topic_key:
+            _respond(id_val, error={"code": -32602, "message": "slug and topic_key required"})
+            return
+        result = guardian_brain.get_last_good(slug, topic_key)
+        _respond(id_val, {"slug": slug, "topic_key": topic_key, "observation": result})
+
+    elif tool_name == "plan_or_act":
+        question = args.get("question", "")
+        slug = args.get("slug", "")
+        confidence = float(args.get("confidence", 0.5))
+        if not question:
+            _respond(id_val, error={"code": -32602, "message": "question required"})
+            return
+        q = question.lower()
+        complexity = "high" if len(question) > 150 or any(k in q for k in (
+            "migr", "refactor", "arquitectur", "reestructur",
+        )) else "low"
+        if confidence >= 0.8 and complexity == "low":
+            action = "assume"
+            plan_type = "direct"
+            reason = "Confianza alta + simple → ejecutar directo"
+        elif confidence >= 0.5 and complexity == "low":
+            action = "ask_little"
+            plan_type = "direct"
+            reason = "Confianza media + simple → preguntar y ejecutar"
+        elif complexity == "high" and confidence >= 0.6:
+            action = "plan"
+            plan_type = "openspec"
+            reason = "Tarea compleja → planificar con OpenSpec"
+        else:
+            action = "investigate"
+            plan_type = "research"
+            reason = "Confianza baja o tarea ambigua → investigar primero"
+        _respond(id_val, {"action": action, "plan_type": plan_type, "reason": reason})
+
+    elif tool_name == "compact_memory":
+        slug = args.get("slug", "")
+        if not slug:
+            _respond(id_val, error={"code": -32602, "message": "slug required"})
+            return
+        result = guardian_brain.compact_guardian_md(slug)
+        _respond(id_val, result)
 
     elif tool_name == "observer_log_prompt":
         slug = args.get("slug", "")

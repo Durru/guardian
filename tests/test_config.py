@@ -254,42 +254,6 @@ class TestI18n(unittest.TestCase):
         self.assertEqual(g.shared.GUARDIAN_LANG, "es")
 
 
-class TestRenderAndMaybeWrite(unittest.TestCase):
-    def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp())
-        self._orig_g_mem = g.MEMORY_DIR
-        self._orig_shared_mem = g.shared.MEMORY_DIR
-        g.MEMORY_DIR = self.tmpdir
-        g.shared.MEMORY_DIR = self.tmpdir
-
-    def tearDown(self):
-        g.MEMORY_DIR = self._orig_g_mem
-        g.shared.MEMORY_DIR = self._orig_shared_mem
-        shutil.rmtree(self.tmpdir)
-
-    def test_writes_new_file(self):
-        dest = self.tmpdir / "test.md"
-        generated = []
-        g._render_and_maybe_write("hello", dest, generated)
-        self.assertTrue(dest.exists())
-        self.assertIn("test.md", generated[0])
-
-    def test_skips_identical_content(self):
-        dest = self.tmpdir / "test.md"
-        dest.write_text("hello")
-        generated = []
-        g._render_and_maybe_write("hello", dest, generated)
-        self.assertEqual(len(generated), 0)
-
-    def test_writes_different_content(self):
-        dest = self.tmpdir / "test.md"
-        dest.write_text("old")
-        generated = []
-        g._render_and_maybe_write("new content", dest, generated)
-        self.assertEqual(dest.read_text(), "new content")
-        self.assertEqual(len(generated), 1)
-
-
 class TestSetupPreconditions(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp())

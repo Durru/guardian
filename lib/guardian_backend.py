@@ -816,7 +816,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             complexity = str(body.get("complexity", "medium"))
             if not task_type:
                 return _json_response(self, 400, {"error": "task_type required"})
-             return _json_response(self, 200, guardian_capability.routing_decision(
+            return _json_response(self, 200, guardian_capability.routing_decision(
                 task_type, context_size=ctx_size, complexity=complexity
             ))
 

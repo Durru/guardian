@@ -797,7 +797,7 @@ def main():
 
 # ── GUARDIAN.md (cerebro esencial, siempre cargado) ─────────────────
 
-GUARDIAN_MD_MAX_LINES = 200
+GUARDIAN_MD_MAX_LINES = 30
 
 
 def read_guardian_md(slug: str) -> str:
@@ -825,64 +825,44 @@ def write_guardian_md(slug: str, content: str) -> dict:
 
 
 def generate_guardian_md(slug: str) -> str:
-    """Generate GUARDIAN.md from the top nodes in each level."""
-    schema.init_project(slug)
-    parts = [
-        f"# GUARDIAN — {slug}",
-        "",
-        "## Identidad",
-        "",
-    ]
-    try:
-        cfg_path = shared.BACKEND_DIR / "genome" / "branches" / shared._branch_hash() / "projects" / slug / "config.yaml"
-        if cfg_path.exists():
-            parts.append("```yaml")
-            parts.append(cfg_path.read_text(encoding="utf-8").strip())
-            parts.append("```")
-        else:
-            parts.append(f"- slug: {slug}")
-    except Exception:
-        parts.append(f"- slug: {slug}")
-    parts.append("")
+    """Generate compact GUARDIAN.md (~25 lines, estilo CLAUDE.md).
 
+    Secciones: Objetivo, Stack, Estado actual, Decisiones activas, Últimos errores.
+    No se regenera desde cero — se escribe progresivamente con append/compact.
+    """
+    schema.init_project(slug)
+    parts = [f"# GUARDIAN — {slug}", ""]
+
+    # Objetivo
+    goal = list_nodes(slug, "semantic", filters={"kind": "goal", "min_importance": 0.7}, limit=1)
+    if goal:
+        parts.append(f"## Objetivo\n{goal[0]['content']}\n")
+    else:
+        parts.append("## Objetivo\n—\n")
+
+    # Stack
+    stack = list_nodes(slug, "semantic", filters={"kind": "stack", "min_importance": 0.5}, limit=1)
+    if stack:
+        parts.append(f"## Stack\n{stack[0]['content']}\n")
+
+    # Decisiones activas (máximo 5)
     decisions = list_nodes(slug, "semantic", filters={"kind": "decision", "min_importance": 0.6}, limit=5)
     if decisions:
         parts.append("## Decisiones activas")
-        parts.append("")
         for d in decisions:
-            parts.append(f"- {d['content']}")
+            topic = d.get("tags", "")
+            topic_str = f" [{topic[0]}]" if isinstance(topic, list) and topic else ""
+            outcome = d.get("outcome", "")
+            marker = {"success": "✅", "failure": "❌", "warning": "⚠️", "info": "ℹ️"}.get(outcome, "")
+            parts.append(f"- {marker}{topic_str} {d['content'][:80]}")
         parts.append("")
 
-    prefs = list_nodes(slug, "semantic", filters={"kind": "preference", "min_importance": 0.5}, limit=5)
-    if prefs:
-        parts.append("## Preferencias del usuario")
-        parts.append("")
-        for p in prefs:
-            parts.append(f"- {p['content']}")
-        parts.append("")
-
-    procs = list_nodes(slug, "procedural", filters={"min_importance": 0.5}, limit=5)
-    if procs:
-        parts.append("## Procedimientos")
-        parts.append("")
-        for p in procs:
-            parts.append(f"- {p['content']}")
-        parts.append("")
-
-    learns = list_nodes(slug, "reflection", filters={"min_importance": 0.5}, limit=3)
-    if learns:
-        parts.append("## Aprendizajes recientes")
-        parts.append("")
-        for l in learns:
-            parts.append(f"- {l['content']}")
-        parts.append("")
-
-    review = list_nodes(slug, "semantic", filters={"needs_review": True}, limit=3)
-    if review:
-        parts.append("## Alertas (requieren revisión)")
-        parts.append("")
-        for r in review:
-            parts.append(f"- {r['content']}")
+    # Últimos errores
+    errors = list_nodes(slug, "reflection", filters={"min_importance": 0.6}, limit=3)
+    if errors:
+        parts.append("## Últimos errores")
+        for e in errors:
+            parts.append(f"- {e['content'][:100]}")
         parts.append("")
 
     return "\n".join(parts)
@@ -891,6 +871,173 @@ def generate_guardian_md(slug: str) -> str:
 def regenerate_guardian_md(slug: str) -> dict:
     content = generate_guardian_md(slug)
     return write_guardian_md(slug, content)
+
+
+# ── Observation system (v4.1.0) ─────────────────────────────────
+
+
+def write_observation(slug: str, obs_type: str, topic_key: str, content: str,
+                      why: str = "", where: str = "", outcome: str = "info",
+                      scope: str = "project", tags: list = None) -> dict:
+    """Save an observation with full metadata.
+
+    obs_type: decision | error | pattern | architecture | config | bugfix
+    topic_key: ej. "db/migration", "auth/jwt"
+    outcome: success | failure | warning | info
+    scope: project | global
+    why: reasoning behind the decision
+    where: files/areas affected
+    tags: list of keywords for search
+    """
+    schema.init_project(slug)
+    tags = tags or []
+    node = {
+        "kind": obs_type,
+        "topic_key": topic_key,
+        "content": content,
+        "why": why,
+        "where": where,
+        "outcome": outcome,
+        "scope": scope,
+        "tags": json.dumps(tags),
+        "importance": 0.7 if outcome in ("success", "failure") else 0.5,
+        "confidence": 1.0,
+    }
+
+    level = "reflection" if obs_type in ("error", "bugfix") else "semantic"
+    result = write(slug, level, node)
+
+    reason = why or content[:80]
+    append_guardian_md_line(slug, obs_type, topic_key, outcome, reason)
+
+    if scope == "global":
+        try:
+            g_node = {**node, "project_slug": slug}
+            g_db = schema.brain_db_path("_global", level)
+            g_conn = sqlite3.connect(str(g_db))
+            g_fields = _dict_to_node_fields(g_node)
+            g_fields["project_slug"] = "_global"
+            g_cols = ", ".join(g_fields.keys())
+            g_ph = ", ".join("?" for _ in g_fields)
+            g_conn.execute(
+                f"INSERT OR REPLACE INTO nodes ({g_cols}) VALUES ({g_ph})",
+                list(g_fields.values()),
+            )
+            g_conn.commit()
+            g_conn.close()
+        except Exception:
+            pass
+
+    return result
+
+
+def get_observations(slug: str, topic_key: str, limit: int = 5,
+                     global_too: bool = True) -> list[dict]:
+    """Search observations by topic_key. Searches project + global."""
+    schema.init_project(slug)
+    results = []
+
+    for level in ("semantic", "reflection"):
+        try:
+            rows = list_nodes(slug, level, filters={"topic_key": topic_key}, limit=limit)
+            results.extend(rows)
+        except Exception:
+            pass
+
+    if global_too:
+        for g_level in ("semantic", "reflection"):
+            try:
+                g_db = schema.brain_db_path("_global", g_level)
+                if not g_db.exists():
+                    continue
+                g_conn = sqlite3.connect(str(g_db))
+                g_conn.row_factory = sqlite3.Row
+                rows = g_conn.execute(
+                    "SELECT * FROM nodes WHERE topic_key = ? ORDER BY importance DESC LIMIT ?",
+                    (topic_key, limit),
+                ).fetchall()
+                g_conn.close()
+                for r in rows:
+                    results.append(_row_to_dict(r))
+            except Exception:
+                pass
+
+    results.sort(key=lambda x: x.get("importance", 0), reverse=True)
+    return results[:limit]
+
+
+def get_last_good(slug: str, topic_key: str) -> dict | None:
+    """Get the last successful observation for a topic_key."""
+    results = get_observations(slug, topic_key, limit=10)
+    for r in results:
+        if r.get("outcome") == "success":
+            return r
+    return None
+
+
+def append_guardian_md_line(slug: str, obs_type: str, topic_key: str,
+                            outcome: str, reason: str) -> dict:
+    """Append 1 line to GUARDIAN.md. Compact if > 30 lines."""
+    marker = {"success": "✅", "failure": "❌", "warning": "⚠️", "info": "ℹ️"}.get(outcome, "•")
+    line = f"- {marker} [{topic_key}] {reason[:100]}"
+
+    gmd = schema.guardian_md_path(slug)
+    existing = read_guardian_md(slug)
+    lines = existing.splitlines() if existing else []
+
+    lines.append(line)
+
+    if len(lines) > GUARDIAN_MD_MAX_LINES:
+        header = []
+        body = []
+        in_header = True
+        for l in lines:
+            if in_header and l.startswith("#"):
+                header.append(l)
+            elif in_header and not l.strip():
+                header.append(l)
+            else:
+                in_header = False
+                body.append(l)
+
+        keep_header = header[:4]
+        keep_body = body[-(GUARDIAN_MD_MAX_LINES - len(keep_header) - 1):]
+        lines = keep_header + [""] + keep_body
+
+    return write_guardian_md(slug, "\n".join(lines))
+
+
+def compact_guardian_md(slug: str) -> dict:
+    """Compact GUARDIAN.md: keep header + most recent lines."""
+    gmd = schema.guardian_md_path(slug)
+    if not gmd.exists():
+        return {"ok": True, "lines": 0, "removed": 0}
+
+    content = read_guardian_md(slug)
+    lines = content.splitlines()
+    before = len(lines)
+
+    if before <= GUARDIAN_MD_MAX_LINES:
+        return {"ok": True, "lines": before, "removed": 0}
+
+    header = []
+    body = []
+    in_header = True
+    for l in lines:
+        if in_header and l.startswith("#"):
+            header.append(l)
+        elif in_header and not l.strip():
+            header.append(l)
+        else:
+            in_header = False
+            body.append(l)
+
+    keep_header = header[:4]
+    keep_body = body[-(GUARDIAN_MD_MAX_LINES - len(keep_header) - 1):]
+    compacted = keep_header + [""] + keep_body
+
+    write_guardian_md(slug, "\n".join(compacted))
+    return {"ok": True, "lines": len(compacted), "removed": before - len(compacted)}
 
 
 # ── Working Memory ──────────────────────────────────────────────────
@@ -1138,8 +1285,8 @@ def should_compact(slug: str) -> dict:
     gmd = schema.guardian_md_path(slug)
     if gmd.exists():
         lines = len(gmd.read_text(encoding="utf-8").splitlines())
-        if lines > 180:
-            triggers.append(f"guardian_md_pressure ({lines} > 180)")
+        if lines >= GUARDIAN_MD_MAX_LINES:
+            triggers.append(f"guardian_md_pressure ({lines} >= {GUARDIAN_MD_MAX_LINES})")
     sm_count = count(slug, "semantic")
     if sm_count > 100:
         triggers.append(f"sm_bloat ({sm_count} > 100)")

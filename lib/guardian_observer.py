@@ -82,10 +82,9 @@ def classify_event(event: dict) -> str:
 def infer_reason_from_prompt(prompt: str) -> str:
     """Infer why the user is asking this. Heuristic."""
     p = prompt.lower().strip()
-    # Check for Spanish imperatives (no space required after)
     if any(p.startswith(k) or f" {k}" in p for k in ("agreg", "creá", "crear", "implement", "implementá",
-                                                       "construí", "construir", "hacé", "hacer",
-                                                       "add ", "create ", "build ", "implement ")):
+                                                        "construí", "construir", "hacé", "hacer",
+                                                        "add ", "create ", "build ", "implement ")):
         return "add_feature"
     if any(k in p for k in ("fix", "bug", "error", "no funciona", "broken", "arreglá", "arreglar")):
         return "fix_bug"
@@ -96,6 +95,79 @@ def infer_reason_from_prompt(prompt: str) -> str:
     if p.endswith("?"):
         return "question"
     return "other"
+
+
+TOPIC_PATTERNS = [
+    # (keywords, topic_key)
+    (["migr", "db", "database", "base de datos", "postgres", "mysql", "sql"], "db/migration"),
+    (["auth", "jwt", "login", "sesión", "token", "oauth"], "auth/jwt"),
+    (["api", "endpoint", "route", "rest"], "api/endpoint"),
+    (["deploy", "ci", "cd", "release", "desplieg"], "deploy/ci"),
+    (["test", "pytest", "testing"], "test/testing"),
+    (["docker", "container", "imagen"], "deploy/docker"),
+    (["error", "bug", "fallo", "crash"], "bugfix/general"),
+    (["refactor", "clean", "mejor"], "refactor/general"),
+    (["security", "seguridad", "vuln"], "security/general"),
+    (["config", "configuraci", "setup"], "config/setup"),
+    (["cache", "redis", "memcach"], "performance/cache"),
+    (["search", "búsqueda", "buscar", "find"], "feature/search"),
+]
+
+
+def extract_topic_key(prompt: str) -> str:
+    """Extrae topic_key del prompt usando heurística de keywords."""
+    p = prompt.lower()
+    scores = []
+    for keywords, topic in TOPIC_PATTERNS:
+        score = sum(1 for k in keywords if k in p)
+        if score > 0:
+            scores.append((score, topic))
+    if not scores:
+        return ""
+    scores.sort(reverse=True)
+    return scores[0][1]
+
+
+def classify_importance(prompt: str, event_type: str = "chat.message") -> float:
+    """Clasifica importancia de un evento (0.0 - 1.0).
+
+    Factores:
+    - Longitud: mensajes más largos => más importante
+    - Keywords de alta importancia (migración, deploy, security, etc.)
+    - Tipo de evento (tool.execute.after => depende del tool)
+    """
+    score = 0.3
+
+    if event_type == "tool.execute.after":
+        return 0.6
+
+    if event_type == "chat.message":
+        length = len(prompt.strip())
+        if length > 200:
+            score += 0.2
+        elif length > 80:
+            score += 0.1
+
+        p = prompt.lower()
+        high_impact = ["migr", "deploy", "security", "arquitectur", "refactor",
+                       "reestructur", "cambi", "change", "architecture"]
+        medium_impact = ["agreg", "crear", "fix", "error", "bug", "test", "config",
+                         "implement", "añad", "feature", "nuev"]
+
+        for kw in high_impact:
+            if kw in p:
+                score += 0.15
+                break
+
+        for kw in medium_impact:
+            if kw in p:
+                score += 0.08
+                break
+
+        if extract_topic_key(prompt):
+            score += 0.05
+
+    return min(1.0, max(0.0, score))
 
 
 # ── Storage helpers ───────────────────────────────────────────────
@@ -238,6 +310,24 @@ class Observer:
         reason = infer_reason_from_prompt(prompt)
         log_prompt(self.slug, prompt, reason, event.get("mode", ""),
                    files=event.get("files_in_context"))
+        imp = classify_importance(prompt, "chat.message")
+        if imp > 0.5:
+            try:
+                import guardian_brain as brain
+                topic_key = extract_topic_key(prompt)
+                brain.write_observation(
+                    slug=self.slug,
+                    obs_type="pattern" if topic_key else "note",
+                    topic_key=topic_key or "general",
+                    content=prompt[:200],
+                    why=reason,
+                    where="",
+                    outcome="info",
+                    scope="project",
+                    tags=[reason] if reason else [],
+                )
+            except Exception:
+                pass
 
     def _on_tool_after(self, event: dict) -> None:
         tool = event.get("tool", "")

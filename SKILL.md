@@ -1,6 +1,6 @@
 ---
 name: nexxoria-guardian
-description: Universal project guardian for OpenCode AI sessions — v3 con memoria cognitiva. Auto-detects projects, genoma, conciencia (2 niveles), 5 modos (read/plan/build/commit/review), brain persistente con Governor y Reflection Agent, specializations stack-aware, OpenSpec + planes ad-hoc, publish/clone/fork, MCP.
+description: Universal project guardian for OpenCode AI sessions — v4 orgánico. Auto-detects projects, genome, conciencia (2 niveles), plan/build modes, skills como tomos de conocimiento, RAG unificado, backend persistente y MCP con codegraph AST + advisor + observer.
 license: MIT
 compatibility: opencode >= 1.17
 metadata:
@@ -8,228 +8,132 @@ metadata:
   workflow: coding
 ---
 
-# Nexxoria Guardian v3 — Ser Cognitivo
+# Nexxoria Guardian v4 — Ser Orgánico
 
-Guardian v3 es un ser orgánico con **memoria cognitiva persistente**: cerebro con 5 niveles (WM + 4 project + 3 global), ojos (RAG + specializations), manos (CLI + hooks + git), piernas (backend :9787) y nanos (35 MCP tools).
+Guardian v4 es un ser orgánico: cerebro (LLM + conciencia + meta-conciencia + RAG), ojos (contexto + codegraph), manos (CLI + hooks + git), piernas (backend :9787 + scheduler) y nanos (MCP tools).
 
 ## Triggers
 
 - Iniciar sesión en un proyecto
 - Usuario pide un cambio de código
-- Usuario menciona `guardian`, `proyecto`, `project`, `cerebro`
+- Usuario menciona `guardian`, `proyecto`, `project`
 - Usuario ejecuta `@guardian <subcomando>`
 - Antes/después de cambios o deploys
-- Cuando se necesite contexto histórico del proyecto
+- Arranque del backend persistente
 
-## Regla 0: GUARDIAN.md primero
+## Regla 0: Contexto primero
 
-Antes de cualquier acción, leer el cerebro esencial.
+Antes de cualquier acción, cargar contexto del proyecto.
 
-```bash
-# Working memory — siempre cargada
-guardian brain read                  # devuelve GUARDIAN.md
+- Inicio de sesión: `guardian context --brief`
+- Antes de cambios: `guardian context --scope <path>`
+- Si hay duda: `guardian context --check`
+- Si no hay cambios nuevos: no re-inyectar contexto
 
-# Si hay duda, consultar memoria profunda
-guardian brain query semantic "tema"  # búsqueda vectorial
-guardian brain query episodic "recientes"
-```
+## Modos de operación
 
-GUARDIAN.md ≤200 líneas, regenerado al cerrar sesión.
+| Modo | Objetivo | Escritura | Conciencia |
+|------|----------|-----------|------------|
+| Plan | Investigar, diseñar | Solo lectura | Percibe + Reflexiona (fuerte) |
+| Build | Implementar, codificar | Lectura + escritura | Decide + Acciona (fuerte) |
 
-## 5 modos de operación
+- Auto-detección: "¿qué pasaría si...?" → Plan. "Hacé esto" → Build.
+- Cambiar con: `guardian mode plan|build` o `curl -X POST :9787/mode`
 
-| Modo | Lectura | Escritura | Uso típico |
-|---|---|---|---|
-| `read` | ✓ | ✗ | Explorar sin tocar |
-| `plan` | ✓ | ✗ | Diseñar, proponer |
-| `build` | ✓ | ✓ | Implementar |
-| `commit` | ✓ | ✓ | Versionar cambios |
-| `review` | ✓ | ✗ | Auditar, verificar |
-
-Cambiar con: `guardian mode <nombre>` o `curl -X POST :9787/mode`
-
-## Ciclo de sesión v3
-
-```
-1. session start
-   → carga GUARDIAN.md (working memory)
-   → activa mode
-   → conciencia N1 percibe
-
-2. trabajo
-   → brain query cuando hay duda
-   → brain write (Governor valida importance/TTL/dup)
-
-3. session end
-   → Reflection Agent corre
-   → extrae lecciones de episodios recientes
-   → actualiza PM (procedural) y RM (reflection)
-   → regenera GUARDIAN.md
-   → handoff a próxima sesión
-```
-
-## Arquitectura v3
+## Arquitectura
 
 ```
 lib/
-├── guardian_brain_schema.py    ← 4 DBs proyecto + 3 DBs globales
-├── guardian_brain.py           ← Storage + Governor + Orchestrator + Reflection
-├── guardian_knowledge.py       ← research/refresh/scrape con TTL
-├── guardian_specialization.py  ← 5 stack-aware specializations
-├── guardian_plan.py            ← OpenSpec + ad-hoc state machine
-├── guardian_maintain.py        ← drift detection + health
-├── guardian_global.py          ← cross-project memory
-├── guardian_capability.py      ← model card + EMA routing
-├── guardian_publish.py         ← sanitización + clone/fork
-├── guardian_lineage.py         ← genealogía
-├── guardian_brain_migration.py ← v2 → v3
-├── guardian_conciencia.py      ← N1 + N2 con brain context
-├── guardian_genome.py          ← identidad + ramas
-├── guardian_rag.py             ← RAG unificado
-├── guardian_shared.py          ← helpers
-├── guardian.py                 ← CLI (50+ comandos)
-├── guardian_backend.py         ← HTTP :9787 (35+ endpoints)
-└── guardian_mcp.py             ← 35 tools stdio
-
-data/projects/<slug>/
-├── config.yaml
-├── brain/
-│   ├── semantic.db
-│   ├── episodic.db
-│   ├── procedural.db
-│   └── reflection.db
-├── GUARDIAN.md                  ← working memory
-├── audit.json
-└── ...
-
-data/global/
-├── semantic.db                  ← cross-project
-├── procedural.db
-└── reflection.db
+├── guardian.py                    ← CLI principal (60+ comandos)
+├── guardian_shared.py             ← Helpers compartidos, paths, i18n
+├── guardian_genome.py             ← Genoma + ramas (3 archivos YAML)
+├── guardian_conciencia.py         ← Conciencia N1+N2 con Advisor integration
+├── guardian_brain.py              ← Cognitive memory: Governor, Reflection Agent
+├── guardian_brain_schema.py       ← SQLite schema: 4 niveles + codegraph + logs
+├── guardian_brain_symbols.py      ← CodeGraph: tree-sitter AST indexer, lookup, query_smart
+├── guardian_brain_advisor.py      ← Contexto dinámico: build_context, advise_on_action
+├── guardian_observer.py           ← Captura de eventos, sanitización, clasificación
+├── guardian_brain_migration.py    ← Migración v2→v3 (brain memory)
+├── guardian_migration_v3_layout.py← Migración v3→v4 layout
+├── guardian_evolution.py          ← Evolve + consolidate
+├── guardian_memory.py             ← Memoria JSONL + TF-IDF
+├── guardian_rag.py                ← RAG unificado (docs + tomes + código + memoria)
+├── guardian_absorb.py             ← Skills: scan/match/classify/ingest
+├── guardian_knowledge.py          ← Knowledge packs: research/refresh/scrape
+├── guardian_specialization.py     ← Stack-aware specializations
+├── guardian_plan.py               ← OpenSpec + planes ad-hoc
+├── guardian_maintain.py           ← Drift + health
+├── guardian_global.py             ← Contexto global cross-project
+├── guardian_capability.py         ← Model card + routing
+├── guardian_publish.py            ← Publish/clone/fork
+├── guardian_lineage.py            ← Genealogía de proyectos
+├── guardian_forja.py              ← Meta-módulo del arquitecto
+├── guardian_backend.py            ← HTTP :9787 (35+ endpoints)
+├── guardian_mcp.py                ← MCP server (40+ tools stdio)
+└── guardian_web.py                ← Dashboard web :7878
 ```
 
-## 5 niveles de memoria
+## Conocimiento
 
-| Nivel | DB | Tipo | TTL | Uso |
-|---|---|---|---|---|
-| WM | GUARDIAN.md | Texto | regenerado | always-loaded |
-| SM | semantic.db | Hechos | 365d | Conocimiento estable |
-| EM | episodic.db | Eventos | 90d | Historia con timestamp |
-| PM | procedural.db | Cómo | 180d | Workflows, patterns |
-| RM | reflection.db | Lecciones | 365d | Aprendizajes |
-| SM-G | global/semantic.db | Stack patterns | 365d | Cross-project |
-| PM-G | global/procedural.db | Workflows | 180d | Reusables |
-| RM-G | global/reflection.db | Lecciones | 365d | Universales |
-
-## Governor — reglas de olvido
-
-Toda escritura pasa por Governor:
-1. **Importance** < 0.3 → rechazado
-2. **Duplicate** (hash near-match) → merge o reject
-3. **TTL** expirado → archive + compress
-4. **Contradiction** → mark stale, prompt reflexión
-
-## Conciencia — 2 niveles
-
-### N1 (cada sesión)
-```
-PERCIBIR: GUARDIAN.md + brain query + mode + contexto
-DECIDIR:  percentiles de certeza
-  > 80%  → ASSUME
-  50-80% → ASK_LITTLE
-  20-50% → ASK_MUCH
-  < 20%  → INVESTIGA
-REFLEXIONAR: brain write si importancia > 0.6
-```
-
-### N2 (periódica, post-sesión)
-```
-OBSERVA: ¿funcionó el routing? ¿se olvidó knowledge stale?
-EVOLUCIONA: ajusta umbrales, prune brain, promote lessons a global
-```
-
-## Specializations (built-in v3)
-
-Activan tomos de conocimiento stack-aware:
-
-```bash
-guardian specialization enable odoo      # arquitectura + ORM + views + módulos
-guardian specialization enable nextjs    # app router + RSC + server actions
-guardian specialization enable fastapi   # async + deps + middleware
-guardian specialization enable postgres  # queries + migrations + indexes
-guardian specialization enable python    # type hints + asyncio + testing
-```
+- **Skills** → absorb → **tomos de conocimiento** (markdown + YAML metadata)
+- **Documentación** → docs scan → auto-chunk → **RAG**
+- **RAG unificado**: docs + skills(tomos) + código + memoria + decisiones
+- RAG se adapta por modo: plan → docs + knowledge; build → code + memory + docs + knowledge
 
 ## Backend persistente
 
 ```bash
-guardian backend start           # :9787
-guardian backend status
-guardian backend stop
+guardian backend start           # Inicia daemon en :9787
+guardian backend status          # Ver estado
+guardian backend stop            # Detener
+
+curl :9787/health                # Health check
+curl :9787/conciencia/cycle      # POST — ciclo N1
+curl :9787/rag?q=consulta&slug=x # GET — RAG query
+curl :9787/genome                # GET — genoma
+curl :9787/evolve                # POST — evolución
+curl :9787/codegraph/query       # GET — query_smart
 ```
 
-Endpoints v3 clave:
-```
-GET  /brain/status?slug=X           # estado del cerebro
-GET  /brain/guardian?slug=X         # GUARDIAN.md
-POST /brain/write                   # escribir nodo
-GET  /brain/query?slug=X&level=semantic&q=...
-POST /brain/reflect                 # disparar reflection
-POST /session/start|continue|end
-POST /knowledge/research?slug=X&query=...
-POST /specializations/enable
-POST /publish                       # publicar como template
-POST /migrate                       # v2 → v3
-GET  /capability/status
-```
-
-## CLI commands v3
+## CLI commands
 
 ```
-Sesión:    session start|continue|end
-Brain:     brain read|write|query|reflect|regenerate-guardian|auto-compact
-Knowledge: knowledge research|refresh|scrape|status
-Spec:      specialization enable|disable|list
-Plan:      plan new|list|status|transition
-Maintain:  maintain
-Global:    global status|promote|classify
-Capability: capability status|routing|measure
-Publish:   publish|clone|fork|migrate
-Mode:      mode read|plan|build|commit|review
-Core v2:   activate|conciencia|context|rag|genome|branch|...
+Proyecto:   detect, status, check, report, setup, activate
+Cambios:    protect, snapshot, diff, rollback, hooks
+AI:         context, rag, mode, conciencia, knowledge, propose
+CodeGraph:  codegraph index|query|status
+Migración:  migrate status|migrate|rollback
+Sistemas:   mode, backend, conciencia, genome, branch, update, evolve, consolidate
+GitHub:     pr, issue, projects
+Stack:      build, dev, test, lint, typecheck, deploy, logs
+Meta:       forja, memory, absorb, web, docs, permission
 ```
 
-## MCP tools (35 totales)
+## MCP tools (40+)
 
-- v2 core: `read_file`, `write_file`, `run_command`, `rag_query`, `conciencia_cycle`, `mode_switch`, `knowledge_search`, `genome_status`, `branch_fork`, `activate_guardian`
-- Forja: `forja_doctor`, `forja_validate`, `forja_index`, `forja_list`, `forja_scaffold`, `forja_run`, `forja_endpoint`, `forja_mcp_tool`, `forja_function`, `forja_diff`, `forja_graph`, `forja_patch`
-- v3 brain: `brain_read`, `brain_query`, `brain_write`, `brain_reflect`, `session_end`
-- v3 features: `knowledge_research`, `specialization_enable`, `maintain`, `publish`, `clone`, `capability_status`, `capability_routing`, `compact_now`
+- `read_file`, `write_file`, `run_command`
+- `rag_query`, `conciencia_cycle`, `mode_switch`
+- `knowledge_search`, `genome_status`, `branch_fork`
+- `query_smart`, `codegraph_index`, `codegraph_status`
+- `forja_*` (scaffold, validate, index, list, doctor, run, endpoint, mcp-tool, function, diff, graph, patch)
 
-## Hooks v3
+## Hooks (8 v4)
 
-- `pre-change`: snapshot, brain query contextual
-- `post-change`: brain write si vale la pena, tests, lint
-- `pre-session`: brain read + conciencia
-- `post-session`: brain reflect + regenerate GUARDIAN.md
-- `pre-deploy`: maintain + capability check
-- `post-deploy`: brain write lessons learned
+- **`permission.ask`** — intercepta writes/bash en módulos protegidos
+- **`session.created`** — inyecta contexto dinámico del Advisor
+- **`chat.message`** — log de prompts vía Observer
+- **`tool.execute.before`** — Advisor advierte si una acción es riesgosa
+- **`tool.execute.after`** — Observer enruta el evento post-ejecución
+- **`tui.prompt.append`** — auto-detecta modo plan/build por keywords
+- **`experimental.session.compacting`** — re-inyecta contexto antes de compactación
+- **`shell.env`** — setea GUARDIAN_HOME y GUARDIAN_DATA
 
 ## Tests
 
 ```bash
 python3 -m pytest tests/ -v
-# 223/223 passing (53 Fase1+2 + 22 Fase3 + 28 Fase4 + 120 base v2)
+# ~260 tests passing
 ```
-
-## Notas
-
-- **Zero deps** — stdlib only, sin requests, numpy, tiktoken
-- **Embeddings = hashing 256-dim** — calidad menor pero predecible
-- **4 project DBs + 3 global DBs** — jerárquico, no plano
-- **GUARDIAN.md ≤200 líneas** — límite duro
-- **publish sanitiza** — regex secrets + manifest log
-- **install.sh tiene safety check** — nunca borra su propio dir
 
 ## Licencia
 

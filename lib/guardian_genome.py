@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import time
 from pathlib import Path
 
 import yaml
@@ -113,7 +114,9 @@ def apply_to_user_branch(branch_path: Path) -> dict:
 
     This is one of the FEW functions that touches the user branch directly.
     The genome is the ONLY thing that decides what goes in the branch.
+    Creates a .bak backup of the previous branch.json automatically.
     """
+    import shutil
     branch_path = Path(branch_path)
     branch_path.mkdir(parents=True, exist_ok=True)
     (branch_path / "evolution").mkdir(exist_ok=True)
@@ -127,8 +130,12 @@ def apply_to_user_branch(branch_path: Path) -> dict:
             current = {}
     else:
         current = {}
+    # Backup pre-update state
+    if branch_file.exists() and current:
+        backup_file = branch_path / f"branch.json.bak.{int(time.time())}"
+        shutil.copy2(str(branch_file), str(backup_file))
     current["genome_version"] = genome.get("schema", {}).get("schema_version", 4)
-    current["genome_updated_at"] = shared._now_epoch() if hasattr(shared, "_now_epoch") else 0
+    current["genome_updated_at"] = round(time.time(), 2)
     with open(branch_file, "w") as f:
         json.dump(current, f, indent=2)
     return {"ok": True, "branch": str(branch_path), "genome_version": current["genome_version"]}
