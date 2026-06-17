@@ -58,7 +58,8 @@ def status(slug: str) -> dict:
 
     v4_config_synced = v4_config.exists() and v4_config.stat().st_size > 0
 
-    needs_migration = (v3_exists and v3_memory) and not v4_has_brain
+    has_v3_data = v3_memory or v3_conciencia_state or v3_conciencia_thresholds or v3_learnings or v3_tomes
+    needs_migration = has_v3_data and not v4_has_brain
 
     return {
         "slug": slug,
