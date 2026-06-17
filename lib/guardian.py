@@ -3250,17 +3250,17 @@ def cmd_save_observation(args):
     topic_key = args[2]
     content = args[3]
     why = ""
-    where = ""
+    location = ""
     outcome = "info"
     scope = "project"
     tags = ""
     for a in args[4:]:
         if a.startswith("--why="): why = a.split("=",1)[1]
-        elif a.startswith("--where="): where = a.split("=",1)[1]
+        elif a.startswith("--location="): location = a.split("=",1)[1]
         elif a.startswith("--outcome="): outcome = a.split("=",1)[1]
         elif a.startswith("--scope="): scope = a.split("=",1)[1]
         elif a.startswith("--tags="): tags = a.split("=",1)[1]
-    result = gb.write_observation(slug, obs_type, topic_key, content, why=why, where=where,
+    result = gb.write_observation(slug, obs_type, topic_key, content, why=why, location=location,
                                    outcome=outcome, scope=scope,
                                    tags=[t.strip() for t in tags.split(",") if t.strip()])
     print(json.dumps({"ok": result.get("ok", False), "id": result.get("id", "")}))

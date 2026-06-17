@@ -497,7 +497,7 @@ TOOLS = [
                 "topic_key": {"type": "string"},
                 "content": {"type": "string"},
                 "why": {"type": "string"},
-                "where": {"type": "string"},
+                "location": {"type": "string"},
                 "outcome": {"type": "string", "enum": ["success", "failure", "warning", "info"]},
                 "scope": {"type": "string", "enum": ["project", "global"]},
                 "tags": {"type": "string"},
@@ -1031,7 +1031,7 @@ def _handle_call(tool_name, args, id_val):
         topic_key = args.get("topic_key", "general")
         content = args.get("content", "")
         why = args.get("why", "")
-        where = args.get("where", "")
+        location = args.get("location", "")
         outcome = args.get("outcome", "info")
         scope = args.get("scope", "project")
         tags = args.get("tags", "")
@@ -1041,7 +1041,7 @@ def _handle_call(tool_name, args, id_val):
         tags_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
         result = guardian_brain.write_observation(
             slug, obs_type, topic_key, content,
-            why=why, where=where, outcome=outcome, scope=scope, tags=tags_list,
+            why=why, location=location, outcome=outcome, scope=scope, tags=tags_list,
         )
         _respond(id_val, result)
 
