@@ -3306,9 +3306,15 @@ def cmd_plan_or_act(args):
     if not args:
         print('{"action":"investigate","plan_type":"research","reason":"No question provided"}')
         return 0
-    question = " ".join(args)
-    q = question.lower()
     confidence = 0.5
+    clean_args = []
+    for a in args:
+        if a.startswith("--confidence="):
+            confidence = float(a.split("=", 1)[1])
+        else:
+            clean_args.append(a)
+    question = " ".join(clean_args)
+    q = question.lower()
     complexity = "high" if len(question) > 150 or any(k in q for k in ("migr", "refactor", "arquitectur", "reestructur")) else "low"
     if confidence >= 0.8 and complexity == "low":
         action, plan_type, reason = "assume", "direct", "Confianza alta + simple → ejecutar"
@@ -3335,7 +3341,7 @@ def cmd_compact_memory(args):
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h", "--ayuda"):
-        print("🛡️  Nexxoria Guardian v4.0.0")
+        print("🛡️  Nexxoria Guardian v4.1.0")
         print()
         print("Usage: guardian <command> [args...]")
         print()
@@ -3383,6 +3389,14 @@ def main():
         print("  branch <list|fork|status|diff>  Ramas de evolución")
         print("  evolve [slug]                Disparar evolución de rama")
         print("  consolidate [slug]           Consolidar memoria + RAG")
+        print("  update                       Aplicar nuevo genoma del creador")
+        print("  propose <kind> <content>     Proponer patrón al genoma")
+        print("  analyze-intent <text>        Analizar intent del usuario (topic_key, importancia)")
+        print("  plan-or-act <question>       Decidir si asumir o planificar")
+        print("  save-observation <slug> <type> <topic> <content>  Guardar observación en brain")
+        print("  get-observation <slug> <topic>     Buscar observaciones por topic")
+        print("  get-last-good <slug> <topic>       Último estado exitoso de un topic")
+        print("  compact-memory <slug>              Compactar GUARDIAN.md")
         print("  memory <args>                Sistema de memoria persistente")
         print("  absorb <args>                Sistema de skills")
         print("  forja <sub> [args]            La Forja: crear/validar/editar/eliminar módulos del core")
@@ -3417,7 +3431,7 @@ def main():
         return 0
 
     if sys.argv[1] in ("--version", "-v"):
-        print("Nexxoria Guardian v4.0.0")
+        print("Nexxoria Guardian v4.1.0")
         return 0
 
     args = sys.argv[1:]

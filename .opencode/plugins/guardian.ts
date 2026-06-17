@@ -218,7 +218,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      nexxoria-guardian_conciencia: {
+      "nexxoria-guardian_conciencia": {
         description: "Run a Guardian consciousness cycle (N1 perceive->decide->reflect + N2 meta)",
         args: {
           question: { type: "string", description: "Optional question to drive the cycle" },

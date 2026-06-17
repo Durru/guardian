@@ -254,6 +254,11 @@ def _dict_to_node_fields(node: dict) -> dict:
         "needs_review": int(node.get("needs_review", 0)),
         "tags": json.dumps(node.get("tags", [])),
         "meta": json.dumps(node.get("meta", {})),
+        "topic_key": node.get("topic_key"),
+        "outcome": node.get("outcome", "info"),
+        "why": node.get("why"),
+        "location": node.get("location"),
+        "scope": node.get("scope", "project"),
     }
     return out
 
@@ -424,6 +429,9 @@ def list_nodes(slug: str, level: str, filters: dict | None = None,
             if "project_slug" in filters:
                 where.append("project_slug = ?")
                 params.append(filters["project_slug"])
+            if "topic_key" in filters:
+                where.append("topic_key LIKE ?")
+                params.append(f"%{filters['topic_key']}%")
         sql = "SELECT * FROM nodes"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -877,7 +885,7 @@ def regenerate_guardian_md(slug: str) -> dict:
 
 
 def write_observation(slug: str, obs_type: str, topic_key: str, content: str,
-                      why: str = "", where: str = "", outcome: str = "info",
+                      why: str = "", location: str = "", outcome: str = "info",
                       scope: str = "project", tags: list = None) -> dict:
     """Save an observation with full metadata.
 
@@ -896,10 +904,10 @@ def write_observation(slug: str, obs_type: str, topic_key: str, content: str,
         "topic_key": topic_key,
         "content": content,
         "why": why,
-        "where": where,
+        "location": location,
         "outcome": outcome,
         "scope": scope,
-        "tags": json.dumps(tags),
+        "tags": tags,
         "importance": 0.7 if outcome in ("success", "failure") else 0.5,
         "confidence": 1.0,
     }

@@ -208,8 +208,16 @@ CREATE TABLE IF NOT EXISTS nodes (
     consolidated INTEGER DEFAULT 0,
     needs_review INTEGER DEFAULT 0,
     tags TEXT,
-    meta TEXT
+    meta TEXT,
+    topic_key TEXT,
+    outcome TEXT DEFAULT 'info',
+    why TEXT,
+    location TEXT,
+    scope TEXT DEFAULT 'project'
 );
+
+CREATE INDEX IF NOT EXISTS idx_nodes_topic_key ON nodes(topic_key);
+CREATE INDEX IF NOT EXISTS idx_nodes_outcome ON nodes(outcome);
 
 CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(kind);
 CREATE INDEX IF NOT EXISTS idx_nodes_level ON nodes(level);
@@ -258,6 +266,22 @@ def _apply_schema(db_path: Path, default_level: str):
     conn = sqlite3.connect(str(db_path))
     try:
         conn.executescript(NODE_DDL)
+        # v4.1.0: migrate existing databases — add new columns if missing
+        existing_cols = [r[1] for r in conn.execute("PRAGMA table_info(nodes)").fetchall()]
+        for col_name, col_def in [("topic_key", "topic_key TEXT"),
+                                   ("outcome", "outcome TEXT DEFAULT 'info'"),
+                                   ("why", "why TEXT"),
+                                   ("location", "location TEXT"),
+                                   ("scope", "scope TEXT DEFAULT 'project'")]:
+            if col_name not in existing_cols:
+                try:
+                    conn.execute(f"ALTER TABLE nodes ADD COLUMN {col_def}")
+                except sqlite3.OperationalError:
+                    pass
+        existing_idxs = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()]
+        if "idx_nodes_topic_key" not in existing_idxs:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_topic_key ON nodes(topic_key)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_outcome ON nodes(outcome)")
         # v4: extended tables in semantic.db
         if default_level == "semantic":
             conn.executescript(CODEGRAPH_DDL)
