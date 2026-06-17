@@ -321,6 +321,25 @@ install_opencode() {
         cp "$plugin_src" "$plugin_dst_dir/guardian.ts" && \
             ok "Plugin OpenCode instalado en $plugin_dst_dir" || \
             warn "No se pudo instalar el plugin"
+        # Register plugin in global OpenCode config
+        local oc_global="${HOME}/.opencode/config.json"
+        if [ -f "$oc_global" ]; then
+            "$PYTHON" -c "
+import json
+path = '$oc_global'
+plugin_path = '$plugin_dst_dir/guardian.ts'
+with open(path) as f:
+    cfg = json.load(f)
+plugins = cfg.setdefault('plugins', [])
+if plugin_path not in plugins:
+    plugins.append(plugin_path)
+    with open(path, 'w') as f:
+        json.dump(cfg, f, indent=4, ensure_ascii=False)
+        f.write('\n')
+    print('ok')
+else:
+    print('exists')
+" 2>/dev/null && ok "Plugin registrado en OpenCode" || warn "No se pudo registrar plugin"
     fi
 
     # 4. MCP server
