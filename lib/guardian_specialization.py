@@ -122,6 +122,7 @@ def install_builtin(name: str) -> dict:
         (target / "knowledge.json").write_text(
             json.dumps(manifest["seed_knowledge"], indent=2, ensure_ascii=False), encoding="utf-8",
         )
+    return {"ok": True, "name": name, "installed": str(target), "seeds": list(manifest.keys())}
 
 
 def create_user_spec(name: str, description: str, knowledge: list[str],
@@ -154,15 +155,6 @@ def create_user_spec(name: str, description: str, knowledge: list[str],
     )
     return {"ok": True, "name": name, "path": str(target / "manifest.yaml"),
             "knowledge_count": len(knowledge), "procedures_count": len(procedures or [])}
-    if manifest.get("seed_procedures"):
-        (target / "procedures.json").write_text(
-            json.dumps(manifest["seed_procedures"], indent=2, ensure_ascii=False), encoding="utf-8",
-        )
-    if manifest.get("seed_known_issues"):
-        (target / "known_issues.json").write_text(
-            json.dumps(manifest["seed_known_issues"], indent=2, ensure_ascii=False), encoding="utf-8",
-        )
-    return {"ok": True, "installed": str(target), "name": name}
 
 
 def list_available() -> list[dict]:

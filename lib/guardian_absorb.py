@@ -10,17 +10,17 @@ Commands:
   suggest <slug> [--all]
   status <slug>
 """
-import json, sys, hashlib, re
+import json, os, sys, hashlib, re
 from pathlib import Path
 
 import guardian_shared as shared
 from guardian_shared import _
 
-SKILLS_GLOBAL = Path("/var/guardian/skills-global.json")
+SKILLS_GLOBAL = shared.BACKEND_DIR / "skills-global.json"
 MEMORY_DIR = shared.MEMORY_DIR
 SKILL_DIRS = [
-    Path("/root/.agents/skills"),
-    Path("/root/.config/opencode/skills"),
+    Path(os.environ.get("HOME", "/root")) / ".agents" / "skills",
+    Path(os.environ.get("HOME", "/root")) / ".config" / "opencode" / "skills",
 ]
 ALWAYS_RELEVANT = {"nexxoria-guardian", "brainstorming", "context-engineering"}
 

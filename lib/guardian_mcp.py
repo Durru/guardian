@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
-import traceback
 from pathlib import Path
 
 import guardian_brain
@@ -568,19 +568,50 @@ def _respond(id_val, result=None, error=None):
     sys.stdout.flush()
 
 
+_ALLOWED_DIRS = [
+    Path("/opt/nexxoria-guardian"),
+    Path(os.environ.get("GUARDIAN_HOME", "/opt/nexxoria-guardian")),
+    Path(os.environ.get("GUARDIAN_DATA", "/var/lib/nexxoria-guardian")).resolve(),
+    Path("/var/guardian"),
+]
+
+def _is_path_allowed(path: str) -> bool:
+    """Check if a path is within allowed directories."""
+    try:
+        resolved = Path(path).resolve()
+        for allowed in _ALLOWED_DIRS:
+            try:
+                if allowed in resolved.parents or resolved == allowed:
+                    return True
+            except (ValueError, OSError):
+                continue
+        # Also allow paths under /tmp/opencode and /root
+        if str(resolved).startswith("/tmp/opencode") or str(resolved).startswith("/root"):
+            return True
+        return False
+    except (OSError, ValueError):
+        return False
+
+
 def _handle_call(tool_name, args, id_val):
     if tool_name == "read_file":
         path = args.get("path", "")
+        if not _is_path_allowed(path):
+            _respond(id_val, error={"code": -4, "message": "Path not allowed"})
+            return
         try:
             content = Path(path).read_text(encoding="utf-8")
             _respond(id_val, {"content": content, "path": path})
         except Exception as e:
-            _respond(id_val, error={"code": -1, "message": str(e)})
+            _respond(id_val, error={"code": -1, "message": str(e)[:200]})
 
     elif tool_name == "write_file":
         path = args.get("path", "")
         content = args.get("content", "")
         slug = args.get("slug", "")
+        if not _is_path_allowed(path):
+            _respond(id_val, error={"code": -4, "message": "Path not allowed"})
+            return
         if slug:
             mode_state = shared.read_mode_state(slug)
             if mode_state.get("mode") != "build":
@@ -591,15 +622,24 @@ def _handle_call(tool_name, args, id_val):
             Path(path).write_text(content, encoding="utf-8")
             _respond(id_val, {"ok": True, "path": path, "bytes": len(content)})
         except Exception as e:
-            _respond(id_val, error={"code": -1, "message": str(e)})
+            _respond(id_val, error={"code": -1, "message": str(e)[:200]})
 
     elif tool_name == "run_command":
         import subprocess
-        command = args.get("command", "")
+        import shlex
+        raw_command = args.get("command", "")
         timeout = args.get("timeout", 30000)
+        if not raw_command:
+            _respond(id_val, error={"code": -32602, "message": "command required"})
+            return
+        try:
+            cmd_list = shlex.split(raw_command)
+        except ValueError as e:
+            _respond(id_val, error={"code": -3, "message": f"invalid command: {e}"})
+            return
         try:
             proc = subprocess.run(
-                command, shell=True, capture_output=True, text=True,
+                cmd_list, capture_output=True, text=True,
                 timeout=timeout / 1000 if timeout else None,
             )
             _respond(id_val, {
@@ -610,7 +650,7 @@ def _handle_call(tool_name, args, id_val):
         except subprocess.TimeoutExpired:
             _respond(id_val, error={"code": -3, "message": "Command timed out"})
         except Exception as e:
-            _respond(id_val, error={"code": -1, "message": str(e)})
+            _respond(id_val, error={"code": -1, "message": str(e)[:200]})
 
     elif tool_name == "rag_query":
         slug = args.get("slug", "")

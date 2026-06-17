@@ -12,7 +12,6 @@ import re
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any
 
 import guardian_brain_schema as schema
 import guardian_shared as shared

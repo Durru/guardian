@@ -502,11 +502,16 @@ def graph_deps() -> dict:
 
 
 def patch_file(rel_path: str, old_text: str, new_text: str) -> dict:
-    full_path = LIB_DIR / rel_path
+    full_path = (LIB_DIR / rel_path).resolve()
     if not full_path.exists():
-        full_path = GUARDIAN_DIR / rel_path
+        full_path = (GUARDIAN_DIR / rel_path).resolve()
     if not full_path.exists():
         return {"ok": False, "error": _("Archivo no encontrado: {p}", p=rel_path)}
+    # Security: prevent path traversal outside Guardian directory
+    try:
+        full_path.relative_to(GUARDIAN_DIR.resolve())
+    except ValueError:
+        return {"ok": False, "error": _("Path fuera del directorio permitido")}
 
     content = full_path.read_text(encoding="utf-8")
     if old_text not in content:
@@ -745,11 +750,22 @@ def list_inventory() -> dict:
 # ── edit ───────────────────────────────────────────────
 
 
+def _resolve_guardian_path(rel_path: str) -> Path | None:
+    """Resolve a relative path within Guardian's directory. Prevents traversal."""
+    for base in (LIB_DIR, GUARDIAN_DIR):
+        full = (base / rel_path).resolve()
+        try:
+            full.relative_to(GUARDIAN_DIR.resolve())
+            if full.exists():
+                return full
+        except ValueError:
+            continue
+    return None
+
+
 def edit_file(rel_path: str) -> dict:
-    full_path = LIB_DIR / rel_path
-    if not full_path.exists():
-        full_path = GUARDIAN_DIR / rel_path
-    if not full_path.exists():
+    full_path = _resolve_guardian_path(rel_path)
+    if full_path is None:
         return {"ok": False, "error": _("Archivo no encontrado: {p}", p=rel_path)}
 
     content = full_path.read_text(encoding="utf-8")
@@ -762,10 +778,8 @@ def edit_file(rel_path: str) -> dict:
 
 
 def write_file_content(rel_path: str, content: str) -> dict:
-    full_path = LIB_DIR / rel_path
-    if not full_path.exists():
-        full_path = GUARDIAN_DIR / rel_path
-    if not full_path.exists():
+    full_path = _resolve_guardian_path(rel_path)
+    if full_path is None:
         return {"ok": False, "error": _("Archivo no encontrado: {p}", p=rel_path)}
 
     full_path.write_text(content, encoding="utf-8")

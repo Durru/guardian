@@ -18,7 +18,6 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
 
 import guardian_brain_advisor as advisor_mod
 import guardian_genome
@@ -27,6 +26,7 @@ import guardian_shared as shared
 
 VALID_MODES = ("read", "plan", "build", "commit", "review")
 DEFAULT_THRESHOLDS = {"assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2}
+THRESHOLD_KEYS = ["assume", "ask_little_floor", "ask_much_floor"]
 
 
 class Percept:
@@ -415,6 +415,35 @@ def _load_brain_context(slug: str, mode: str, question: str = "") -> dict:
         return guardian_brain.build_context_for_cycle(slug, mode, question) or {}
     except Exception:
         return {}
+
+
+def quick_check(slug: str, path: str = "", operation_type: str = "edit",
+                mode: str = "plan", rag_results: list = None) -> dict:
+    """Quick permission check. Used by backend and CLI.
+
+    Returns dict with allowed, action, confidence, sources.
+    """
+    try:
+        c = Conciencia(slug=slug)
+        event = {
+            "question": f"permission: {operation_type} {path}",
+            "context": {"path": path, "operation": operation_type},
+            "explicit_question": True,
+        }
+        p = c.perceive(event)
+        if rag_results:
+            p.sources.append(f"rag:{len(rag_results)}_results")
+        d = c.decide(p)
+        allowed = d.action == "assume" or (d.action == "ask_little" and mode == "build")
+        return {
+            "allowed": allowed,
+            "action": d.action,
+            "confidence": round(d.confidence, 2),
+            "sources": d.sources,
+            "risk": d.risk,
+        }
+    except Exception:
+        return {"allowed": False, "action": "investigate", "confidence": 0.0, "sources": [], "risk": "high"}
 
 
 def _evolve(slug, cycles, thresholds):

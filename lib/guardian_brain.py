@@ -37,7 +37,6 @@ import struct
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 import guardian_brain_schema as schema
 import guardian_shared as shared
@@ -920,11 +919,12 @@ def write_observation(slug: str, obs_type: str, topic_key: str, content: str,
 
     if scope == "global":
         try:
-            g_node = {**node, "project_slug": slug}
-            g_db = schema.brain_db_path("_global", level)
+            g_node = {**node, "project_slug": "_global"}
+            g_level = f"{level}_g"
+            g_db = schema.global_db_path(g_level)
             g_conn = sqlite3.connect(str(g_db))
+            _apply_schema_global(g_conn)
             g_fields = _dict_to_node_fields(g_node)
-            g_fields["project_slug"] = "_global"
             g_cols = ", ".join(g_fields.keys())
             g_ph = ", ".join("?" for _ in g_fields)
             g_conn.execute(
@@ -953,16 +953,16 @@ def get_observations(slug: str, topic_key: str, limit: int = 5,
             pass
 
     if global_too:
-        for g_level in ("semantic", "reflection"):
+        for g_level_name in ("semantic_g", "reflection_g"):
             try:
-                g_db = schema.brain_db_path("_global", g_level)
+                g_db = schema.global_db_path(g_level_name)
                 if not g_db.exists():
                     continue
                 g_conn = sqlite3.connect(str(g_db))
                 g_conn.row_factory = sqlite3.Row
                 rows = g_conn.execute(
-                    "SELECT * FROM nodes WHERE topic_key = ? ORDER BY importance DESC LIMIT ?",
-                    (topic_key, limit),
+                    "SELECT * FROM nodes WHERE topic_key LIKE ? ORDER BY importance DESC LIMIT ?",
+                    (f"%{topic_key}%", limit),
                 ).fetchall()
                 g_conn.close()
                 for r in rows:
@@ -1046,6 +1046,41 @@ def compact_guardian_md(slug: str) -> dict:
 
     write_guardian_md(slug, "\n".join(compacted))
     return {"ok": True, "lines": len(compacted), "removed": before - len(compacted)}
+
+
+def _apply_schema_global(conn):
+    """Ensure global DB has the nodes table schema."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS nodes (
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, level TEXT, content TEXT,
+        embedding BLOB, importance REAL DEFAULT 0.5, ttl INTEGER,
+        confidence REAL DEFAULT 0.7, source TEXT, stack TEXT,
+        version_range TEXT, project_slug TEXT, url TEXT,
+        source_checksum TEXT, created_at REAL, last_accessed REAL,
+        access_count INTEGER DEFAULT 0, consolidated INTEGER DEFAULT 0,
+        needs_review INTEGER DEFAULT 0, tags TEXT, meta TEXT,
+        topic_key TEXT, outcome TEXT DEFAULT 'info', why TEXT, location TEXT, scope TEXT DEFAULT 'project'
+    )""")
+
+
+def build_context_for_cycle(slug: str, mode: str = "plan", question: str = "") -> dict:
+    """Build a compact context dict for the concieria cycle.
+
+    Called by conciencia._load_brain_context(). Returns a dict with
+    project state, recent decisions, and relevant observations.
+    """
+    schema.init_project(slug)
+    result = {"slug": slug, "mode": mode, "nodes": 0, "decisions": [], "observations": []}
+    try:
+        result["nodes"] = count(slug, "semantic")
+        decisions = list_nodes(slug, "semantic", filters={"kind": "decision", "min_importance": 0.6}, limit=5)
+        result["decisions"] = [{"content": d["content"][:100], "ts": d.get("created_at")} for d in decisions]
+        if question:
+            obs = get_observations(slug, question, limit=3, global_too=True)
+            result["observations"] = [{"topic": o.get("topic_key"), "outcome": o.get("outcome"),
+                                        "content": o["content"][:100]} for o in obs if o.get("content")]
+    except Exception:
+        pass
+    return result
 
 
 # ── Working Memory ──────────────────────────────────────────────────

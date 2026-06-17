@@ -65,7 +65,7 @@ builtins.input = _input
 
 GUARDIAN_DIR = Path(__file__).resolve().parent.parent
 MEMORY_DIR = shared.MEMORY_DIR
-SKILLS_GLOBAL = Path("/var/guardian/skills-global.json")
+SKILLS_GLOBAL = shared.BACKEND_DIR / "skills-global.json"
 TEMPLATE_DIR = GUARDIAN_DIR / "templates"
 PROMPT_DIR = GUARDIAN_DIR / "prompts"
 MEMORY_SCRIPT = GUARDIAN_DIR / "lib" / "guardian_memory.py"
@@ -323,7 +323,7 @@ def _setup_check_docs(config):
 
 def _setup_check_skills(slug):
     """Return True if skills are stale or missing."""
-    global_path = Path("/var/guardian/skills-global.json")
+    global_path = SKILLS_GLOBAL
     if not global_path.exists():
         return True
     global_data = shared.read_json(global_path, {})
@@ -3648,8 +3648,6 @@ def main():
         return cmd_observer(None, cmd_args)
 
     # ── v3: knowledge, specialization, plan, maintain ──
-    if cmd == "knowledge":
-        return cmd_knowledge(cmd_args)
     if cmd == "specialization":
         return cmd_specialization(cmd_args)
     if cmd == "plan":

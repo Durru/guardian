@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
-from pathlib import Path
-
 import guardian_conciencia
 import guardian_rag
 import guardian_shared as shared
