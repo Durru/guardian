@@ -290,27 +290,55 @@ guardian backend start          # Inicia backend persistente
 
 El plugin se auto-descubre desde `.opencode/plugins/`.
 
-### Herramientas expuestas
+### Herramientas expuestas (plugin tools)
 
 | Tool | Descripción |
 |------|-------------|
-| `guardian_status` | Estado del proyecto, modo, backend health |
-| `guardian_conciencia` | Ejecutar ciclo de conciencia |
-| `guardian_rag` | Consultar RAG |
-| `guardian_mode` | Cambiar modo plan/build |
-| `guardian_check_permission` | Verificar si una operación está permitida |
-| `guardian_why_blocked` | Explicar por qué un archivo está bloqueado |
-| `guardian_query_smart` | CodeGraph: buscar símbolos del proyecto por nombre/signature |
-| `guardian_codegraph_index` | CodeGraph: indexar el AST del proyecto con tree-sitter |
-| `guardian_codegraph_status` | CodeGraph: ver estado del índice y conteo de símbolos |
-| `guardian_analyze_intent` | Analiza intent del usuario, extrae topic_key, clasifica importancia |
-| `guardian_save_observation` | Guarda observación con metadata (type, topic_key, outcome, why, where) |
-| `guardian_get_observation` | Busca observaciones por topic_key en brain |
-| `guardian_get_last_good` | Obtiene última observación exitosa de un topic |
-| `guardian_plan_or_act` | Decide si va directo o necesita planificación compleja |
-| `guardian_compact_memory` | Compacta GUARDIAN.md borrando líneas viejas |
+| `nexxoria-guardian_status` | Estado del proyecto, modo, backend health |
+| `nexxoria-guardian_conciencia` | Ejecutar ciclo de conciencia |
+| `nexxoria-guardian_rag` | Consultar RAG |
+| `nexxoria-guardian_mode` | Cambiar modo plan/build |
+| `nexxoria-guardian_brain_read` | Leer GUARDIAN.md |
+| `nexxoria-guardian_brain_query` | Buscar en brain |
+| `nexxoria-guardian_brain_write` | Escribir en brain |
+| `nexxoria-guardian_query_smart` | CodeGraph: buscar símbolos |
+| `nexxoria-guardian_codegraph_index` | Indexar AST con tree-sitter |
+| `nexxoria-guardian_codegraph_status` | Estado del CodeGraph |
+| `nexxoria-guardian_analyze_intent` | Analiza intent del usuario |
+| `nexxoria-guardian_save_observation` | Guarda observación con metadata |
+| `nexxoria-guardian_get_observation` | Busca observaciones por topic |
+| `nexxoria-guardian_get_last_good` | Último estado exitoso de un topic |
+| `nexxoria-guardian_plan_or_act` | Decide si asumir o planificar |
+| `nexxoria-guardian_compact_memory` | Compacta GUARDIAN.md |
+| `nexxoria-guardian_check_permission` | Verificar permiso de operación |
+| `nexxoria-guardian_why_blocked` | Explicar por qué un path está bloqueado |
 
-### Hooks (v4.1.0 — 6 hooks)
+### Agentes OpenCode (v4.2.0 — 1 primario + 8 subagentes)
+
+| Agente | Rol | Tools |
+|--------|-----|-------|
+| **`guardian`** (primary) | 🧠 Conciencia — percibe, decide, delega, reflexiona | read + task |
+| `guardian-executor` | 🔧 Manos — escribe código, edita, ejecuta comandos | bash, edit, write, read |
+| `guardian-researcher` | 🔍 Ojos — investiga temas, busca, analiza | bash, read |
+| `guardian-memory` | 💾 Nanos — memoria persistente, compactación | bash, read |
+| `guardian-observer` | 👁️ Sentidos — clasifica eventos, extrae topics | bash, read |
+| `guardian-planner` | 📋 Planificador — descompone tareas en pasos | bash, read |
+| `guardian-reviewer` | 🔎 Revisor — code review antes de ejecutar | bash, read |
+| `guardian-tester` | 🧪 Verificador — ejecuta tests post-cambio | bash, read |
+| `guardian-documenter` | 📝 Documentador — actualiza GUARDIAN.md + brain | bash, read, write |
+
+### Árbol de delegación
+
+```
+Tarea simple + confianza alta → executor
+Tarea compleja → planner → reviewer → executor → tester → documenter
+Necesito información → researcher
+Memoria → memory
+Evento → observer
+Plan multi-etapa → sdd-propose/spec/design/tasks/apply/verify/archive
+```
+
+### Hooks (v4.2.0 — 6 hooks)
 
 - **`session.created`**: Solo inyecta GUARDIAN.md (~25 líneas). NADA de Advisor.
 - **`permission.ask`**: Intercepta writes/bash en módulos protegidos, consulta backend con cache LRU (5min TTL, max 200 entries)

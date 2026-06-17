@@ -232,8 +232,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { result }
         },
       },
-
-      nexxoria-guardian_rag: {
+"
+      "nexxoria-guardian_rag": {
         description: "Search Guardian RAG knowledge base (memory + tomes + docs)",
         args: {
           query: { type: "string", description: "Search query" },
@@ -246,8 +246,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { query: args.query, result }
         },
       },
-
-      nexxoria-guardian_mode: {
+"
+      "nexxoria-guardian_mode": {
         description: "Switch Guardian mode (read/plan/build/commit/review) or show current status",
         args: {
           mode: { type: "string", enum: ["read", "plan", "build", "commit", "review"], description: "Target mode" },
@@ -265,8 +265,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { mode: args.mode, switched: true, reason }
         },
       },
-
-      nexxoria-guardian_check_permission: {
+"
+      "nexxoria-guardian_check_permission": {
         description: "Check if an operation is allowed by Guardian conciencia",
         args: {
           path: { type: "string", description: "File path to check" },
@@ -283,8 +283,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           }
         },
       },
-
-      nexxoria-guardian_why_blocked: {
+"
+      "nexxoria-guardian_why_blocked": {
         description: "Explain why a path is blocked and how to unblock it",
         args: {
           path: { type: "string", description: "File path that is blocked" },
@@ -314,8 +314,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
       },
 
       // ── v3 cognitive memory tools ───────────────────────────
-
-      nexxoria-guardian_brain_read: {
+"
+      "nexxoria-guardian_brain_read": {
         description: "Read GUARDIAN.md essential working memory (always-loaded)",
         args: {
           slug: { type: "string", description: "Project slug (default: current)" },
@@ -326,8 +326,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, guardian_md: out }
         },
       },
-
-      nexxoria-guardian_brain_query: {
+"
+      "nexxoria-guardian_brain_query": {
         description: "Vector search the project's cognitive memory (semantic/episodic/procedural/reflection)",
         args: {
           slug: { type: "string" },
@@ -342,8 +342,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, level: args.level, q: args.q, result: out }
         },
       },
-
-      nexxoria-guardian_brain_write: {
+"
+      "nexxoria-guardian_brain_write": {
         description: "Write a node to the project's brain (passes through Governor)",
         args: {
           slug: { type: "string" },
@@ -359,8 +359,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, result: out }
         },
       },
-
-      nexxoria-guardian_brain_reflect: {
+"
+      "nexxoria-guardian_brain_reflect": {
         description: "Trigger the Reflection Agent (post-session memory consolidation)",
         args: {
           slug: { type: "string" },
@@ -371,8 +371,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, result: out }
         },
       },
-
-      nexxoria-guardian_session_end: {
+"
+      "nexxoria-guardian_session_end": {
         description: "End session: reflection + GUARDIAN.md regen + handoff",
         args: {
           slug: { type: "string" },
@@ -385,8 +385,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, result: out }
         },
       },
-
-      nexxoria-guardian_knowledge_research: {
+"
+      "nexxoria-guardian_knowledge_research": {
         description: "Investigate a topic and return a research plan with TTL",
         args: {
           slug: { type: "string" },
@@ -400,8 +400,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, query: args.query, result: out }
         },
       },
-
-      nexxoria-guardian_specialization_enable: {
+"
+      "nexxoria-guardian_specialization_enable": {
         description: "Activate a stack-aware specialization (odoo, nextjs, fastapi, postgres, python)",
         args: {
           slug: { type: "string" },
@@ -413,8 +413,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, name: args.name, result: out }
         },
       },
-
-      nexxoria-guardian_maintain: {
+"
+      "nexxoria-guardian_maintain": {
         description: "Run a complete project health report (drift, stale nodes, config issues)",
         args: {
           slug: { type: "string" },
@@ -425,8 +425,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, result: out }
         },
       },
-
-      nexxoria-guardian_publish: {
+"
+      "nexxoria-guardian_publish": {
         description: "Publish a project as a sanitized template",
         args: {
           slug: { type: "string" },
@@ -441,8 +441,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, result: out }
         },
       },
-
-      nexxoria-guardian_clone: {
+"
+      "nexxoria-guardian_clone": {
         description: "Create a new project from a template",
         args: {
           template: { type: "string" },
@@ -453,8 +453,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { result: out }
         },
       },
-
-      nexxoria-guardian_capability_status: {
+"
+      "nexxoria-guardian_capability_status": {
         description: "Read the model card (success rate per task type)",
         args: {},
         async execute(_args: any) {
@@ -462,8 +462,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { result: out }
         },
       },
-
-      nexxoria-guardian_capability_routing: {
+"
+      "nexxoria-guardian_capability_routing": {
         description: "Decide whether to delegate a task to the LLM or answer from local memory",
         args: {
           task_type: { type: "string" },
@@ -477,8 +477,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { result: out }
         },
       },
-
-      nexxoria-guardian_compact_now: {
+"
+      "nexxoria-guardian_compact_now": {
         description: "Trigger auto-compaction of the brain (Governor GC + archive)",
         args: {
           slug: { type: "string" },
@@ -489,8 +489,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, result: out }
         },
       },
-
-      nexxoria-guardian_query_smart: {
+"
+      "nexxoria-guardian_query_smart": {
         description: "CodeGraph query: search project symbols by name/signature (1 tool = 40 calls)",
         args: {
           slug: { type: "string", description: "Project slug (default: current)" },
@@ -504,8 +504,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, query: args.query, result: out }
         },
       },
-
-      nexxoria-guardian_codegraph_index: {
+"
+      "nexxoria-guardian_codegraph_index": {
         description: "Index the project's source code into CodeGraph (tree-sitter AST symbols)",
         args: {
           slug: { type: "string", description: "Project slug (default: current)" },
@@ -518,8 +518,8 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
           return { slug: s, result: out }
         },
       },
-
-      nexxoria-guardian_codegraph_status: {
+"
+      "nexxoria-guardian_codegraph_status": {
         description: "Check if CodeGraph is indexed and show symbol counts",
         args: {
           slug: { type: "string", description: "Project slug (default: current)" },
@@ -583,7 +583,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         if (gmd) {
           output.context.push("## Guardian\n" + gmd)
         }
-        output.context.push("Guardian tools: nexxoria-guardian_status, nexxoria-guardian_conciencia, nexxoria-guardian_rag, nexxoria-guardian_mode, nexxoria-guardian_brain_read, nexxoria-guardian_brain_query, nexxoria-guardian_brain_write, nexxoria-guardian_brain_reflect, nexxoria-guardian_session_end, nexxoria-guardian_query_smart, nexxoria-guardian_codegraph_index, nexxoria-guardian_codegraph_status, nexxoria-guardian_knowledge_research, nexxoria-guardian_specialization_enable, nexxoria-guardian_maintain, nexxoria-guardian_publish, nexxoria-guardian_capability_status, nexxoria-guardian_compact_now, nexxoria-guardian_check_permission, nexxoria-guardian_why_blocked, nexxoria-guardian_analyze_intent, nexxoria-guardian_save_observation, nexxoria-guardian_get_observation, nexxoria-guardian_get_last_good, nexxoria-guardian_plan_or_act, nexxoria-guardian_compact_memory")
+        output.context.push("Guardian tools: nexxoria-guardian_status, nexxoria-guardian_conciencia, nexxoria-guardian_rag, nexxoria-guardian_mode, nexxoria-guardian_brain_read, nexxoria-guardian_brain_query, nexxoria-guardian_brain_write, nexxoria-guardian_brain_reflect, nexxoria-guardian_session_end, nexxoria-guardian_query_smart, nexxoria-guardian_codegraph_index, nexxoria-guardian_codegraph_status, nexxoria-guardian_knowledge_research, nexxoria-guardian_specialization_enable, nexxoria-guardian_maintain, nexxoria-guardian_publish, nexxoria-guardian_clone, nexxoria-guardian_capability_status, nexxoria-guardian_capability_routing, nexxoria-guardian_compact_now, nexxoria-guardian_check_permission, nexxoria-guardian_why_blocked, nexxoria-guardian_analyze_intent, nexxoria-guardian_save_observation, nexxoria-guardian_get_observation, nexxoria-guardian_get_last_good, nexxoria-guardian_plan_or_act, nexxoria-guardian_compact_memory")
       } catch {
         // silent
       }
