@@ -1,4 +1,4 @@
-import { execSync } from "child_process"
+import { spawnSync } from "child_process"
 import type { Plugin, Permission } from "@opencode-ai/plugin"
 
 const GUARDIAN = "/opt/nexxoria-guardian/guardian"
@@ -30,11 +30,12 @@ async function ensureBackend(): Promise<boolean> {
 
 function guardian(...args: string[]): string {
   try {
-    return execSync(`${GUARDIAN} ${args.join(" ")}`, {
+    const proc = spawnSync(GUARDIAN, args, {
       encoding: "utf-8",
       timeout: 15000,
       windowsHide: true,
-    }).trim()
+    })
+    return (proc.stdout || "").trim()
   } catch {
     return ""
   }
@@ -208,7 +209,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
 
   return {
     tool: {
-      guardian_status: {
+      "nexxoria-guardian_status": {
         description: "Show Guardian genome, branch, and current mode status",
         args: {},
         async execute(_args: any, _ctx: any) {
@@ -217,7 +218,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_conciencia: {
+      nexxoria-guardian_conciencia: {
         description: "Run a Guardian consciousness cycle (N1 perceive->decide->reflect + N2 meta)",
         args: {
           question: { type: "string", description: "Optional question to drive the cycle" },
@@ -232,7 +233,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_rag: {
+      nexxoria-guardian_rag: {
         description: "Search Guardian RAG knowledge base (memory + tomes + docs)",
         args: {
           query: { type: "string", description: "Search query" },
@@ -246,7 +247,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_mode: {
+      nexxoria-guardian_mode: {
         description: "Switch Guardian mode (read/plan/build/commit/review) or show current status",
         args: {
           mode: { type: "string", enum: ["read", "plan", "build", "commit", "review"], description: "Target mode" },
@@ -265,7 +266,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_check_permission: {
+      nexxoria-guardian_check_permission: {
         description: "Check if an operation is allowed by Guardian conciencia",
         args: {
           path: { type: "string", description: "File path to check" },
@@ -283,7 +284,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_why_blocked: {
+      nexxoria-guardian_why_blocked: {
         description: "Explain why a path is blocked and how to unblock it",
         args: {
           path: { type: "string", description: "File path that is blocked" },
@@ -314,7 +315,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
 
       // ── v3 cognitive memory tools ───────────────────────────
 
-      guardian_brain_read: {
+      nexxoria-guardian_brain_read: {
         description: "Read GUARDIAN.md essential working memory (always-loaded)",
         args: {
           slug: { type: "string", description: "Project slug (default: current)" },
@@ -326,7 +327,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_brain_query: {
+      nexxoria-guardian_brain_query: {
         description: "Vector search the project's cognitive memory (semantic/episodic/procedural/reflection)",
         args: {
           slug: { type: "string" },
@@ -342,7 +343,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_brain_write: {
+      nexxoria-guardian_brain_write: {
         description: "Write a node to the project's brain (passes through Governor)",
         args: {
           slug: { type: "string" },
@@ -359,7 +360,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_brain_reflect: {
+      nexxoria-guardian_brain_reflect: {
         description: "Trigger the Reflection Agent (post-session memory consolidation)",
         args: {
           slug: { type: "string" },
@@ -371,7 +372,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_session_end: {
+      nexxoria-guardian_session_end: {
         description: "End session: reflection + GUARDIAN.md regen + handoff",
         args: {
           slug: { type: "string" },
@@ -385,7 +386,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_knowledge_research: {
+      nexxoria-guardian_knowledge_research: {
         description: "Investigate a topic and return a research plan with TTL",
         args: {
           slug: { type: "string" },
@@ -400,7 +401,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_specialization_enable: {
+      nexxoria-guardian_specialization_enable: {
         description: "Activate a stack-aware specialization (odoo, nextjs, fastapi, postgres, python)",
         args: {
           slug: { type: "string" },
@@ -413,7 +414,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_maintain: {
+      nexxoria-guardian_maintain: {
         description: "Run a complete project health report (drift, stale nodes, config issues)",
         args: {
           slug: { type: "string" },
@@ -425,7 +426,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_publish: {
+      nexxoria-guardian_publish: {
         description: "Publish a project as a sanitized template",
         args: {
           slug: { type: "string" },
@@ -441,7 +442,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_clone: {
+      nexxoria-guardian_clone: {
         description: "Create a new project from a template",
         args: {
           template: { type: "string" },
@@ -453,7 +454,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_capability_status: {
+      nexxoria-guardian_capability_status: {
         description: "Read the model card (success rate per task type)",
         args: {},
         async execute(_args: any) {
@@ -462,7 +463,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_capability_routing: {
+      nexxoria-guardian_capability_routing: {
         description: "Decide whether to delegate a task to the LLM or answer from local memory",
         args: {
           task_type: { type: "string" },
@@ -477,7 +478,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_compact_now: {
+      nexxoria-guardian_compact_now: {
         description: "Trigger auto-compaction of the brain (Governor GC + archive)",
         args: {
           slug: { type: "string" },
@@ -489,7 +490,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_query_smart: {
+      nexxoria-guardian_query_smart: {
         description: "CodeGraph query: search project symbols by name/signature (1 tool = 40 calls)",
         args: {
           slug: { type: "string", description: "Project slug (default: current)" },
@@ -504,7 +505,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_codegraph_index: {
+      nexxoria-guardian_codegraph_index: {
         description: "Index the project's source code into CodeGraph (tree-sitter AST symbols)",
         args: {
           slug: { type: "string", description: "Project slug (default: current)" },
@@ -518,7 +519,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         },
       },
 
-      guardian_codegraph_status: {
+      nexxoria-guardian_codegraph_status: {
         description: "Check if CodeGraph is indexed and show symbol counts",
         args: {
           slug: { type: "string", description: "Project slug (default: current)" },
@@ -582,43 +583,16 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
         if (gmd) {
           output.context.push("## Guardian\n" + gmd)
         }
-        output.context.push("Guardian tools: guardian_status, guardian_conciencia, guardian_rag, guardian_mode, guardian_brain_read, guardian_brain_query, guardian_brain_write, guardian_brain_reflect, guardian_session_end, guardian_query_smart, guardian_codegraph_index, guardian_codegraph_status, guardian_knowledge_research, guardian_specialization_enable, guardian_maintain, guardian_publish, guardian_capability_status, guardian_compact_now, guardian_check_permission, guardian_why_blocked, guardian_analyze_intent, guardian_save_observation, guardian_get_observation, guardian_get_last_good, guardian_plan_or_act, guardian_compact_memory")
+        output.context.push("Guardian tools: nexxoria-guardian_status, nexxoria-guardian_conciencia, nexxoria-guardian_rag, nexxoria-guardian_mode, nexxoria-guardian_brain_read, nexxoria-guardian_brain_query, nexxoria-guardian_brain_write, nexxoria-guardian_brain_reflect, nexxoria-guardian_session_end, nexxoria-guardian_query_smart, nexxoria-guardian_codegraph_index, nexxoria-guardian_codegraph_status, nexxoria-guardian_knowledge_research, nexxoria-guardian_specialization_enable, nexxoria-guardian_maintain, nexxoria-guardian_publish, nexxoria-guardian_capability_status, nexxoria-guardian_compact_now, nexxoria-guardian_check_permission, nexxoria-guardian_why_blocked, nexxoria-guardian_analyze_intent, nexxoria-guardian_save_observation, nexxoria-guardian_get_observation, nexxoria-guardian_get_last_good, nexxoria-guardian_plan_or_act, nexxoria-guardian_compact_memory")
       } catch {
         // silent
       }
     },
 
-    // ── v4.1.0: chat.message — analiza + busca contexto + auto-save ──
-    "chat.message": async (input: any, output: any) => {
+    // ── v4.1.0: chat.message — log prompt via observer (ya clasifica y guarda solo) ──
+    "chat.message": async (input: any, _ctx: any) => {
       try {
-        const prompt = input.content || ""
-        if (!prompt) return
-
-        const intentRaw = guardian("brain", "mcp-call", slug, "analyze_intent",
-                                   JSON.stringify({ prompt }))
-        let intent: any = {}
-        try { intent = JSON.parse(intentRaw) } catch { return }
-        const topicKey = intent.topic_key || ""
-
-        if (topicKey && intent.has_context) {
-          const obsRaw = guardian("brain", "mcp-call", slug, "get_observation",
-                                   JSON.stringify({ slug, topic_key: topicKey }))
-          let obs: any = {}
-          try { obs = JSON.parse(obsRaw) } catch { /* ignore */ }
-          if (obs.observations && obs.observations.length > 0) {
-            output.context = output.context || []
-            const lines = obs.observations.slice(0, 3).map((o: any) => {
-              const mark: Record<string, string> = { success: "✅", failure: "❌", warning: "⚠️", info: "ℹ️" }
-              return `${mark[o.outcome] || "•"} ${(o.content || "").substring(0, 120)}`
-            })
-            output.context.push(`## Guardian (${topicKey})\n${lines.join("\n")}`)
-          }
-        }
-
-        if ((intent.importance || 0) > 0.5) {
-          guardian("brain", "write-auto", slug, "semantic", "chat_event",
-                   prompt.substring(0, 200), "--importance=0.5")
-        }
+        guardian("observer", "log-prompt", slug, input.content || "", "--mode=build")
       } catch {
         // silent
       }
@@ -640,18 +614,12 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
       }
     },
 
-    // ── v4.1.0: tool.execute.after — observa + guarda si relevante ──
+    // ── v4.1.0: tool.execute.after — observa via observer ──
     "tool.execute.after": async (input: any, _output: any) => {
       try {
         const tool = input.tool || ""
         const args = typeof input.args === "string" ? input.args : JSON.stringify(input.args || {})
         guardian("observer", "route", slug, tool, args, JSON.stringify(_output || {}))
-
-        if (tool === "Edit" || tool === "Write") {
-          guardian("save_observation", slug, "decision", "edit/file-change",
-                   `Edited: ${input.file || args.substring(0, 100)}`,
-                   "--outcome=info", "--scope=project")
-        }
       } catch {
         // silent
       }

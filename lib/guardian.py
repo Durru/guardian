@@ -3227,6 +3227,110 @@ def cmd_stack(action, slug):
     except Exception as e:
         return err(f"Error al ejecutar {action}: {e}")
 
+# ── v4.1.0: cmd wrappers for MCP tools (usados desde plugin) ──
+
+def cmd_analyze_intent(args):
+    if not args:
+        print('{"topic_key":"","importance":0,"has_context":false}')
+        return 0
+    prompt = " ".join(args)
+    import guardian_observer as go
+    topic = go.extract_topic_key(prompt)
+    imp = go.classify_importance(prompt, "chat.message")
+    print(json.dumps({"topic_key": topic, "importance": round(imp, 2), "has_context": bool(topic)}))
+    return 0
+
+def cmd_save_observation(args):
+    import guardian_brain as gb
+    if len(args) < 4:
+        print('{"ok":false,"error":"Uso: save-observation <slug> <type> <topic_key> <content> [--why=...]"}')
+        return 1
+    slug = args[0]
+    obs_type = args[1]
+    topic_key = args[2]
+    content = args[3]
+    why = ""
+    where = ""
+    outcome = "info"
+    scope = "project"
+    tags = ""
+    for a in args[4:]:
+        if a.startswith("--why="): why = a.split("=",1)[1]
+        elif a.startswith("--where="): where = a.split("=",1)[1]
+        elif a.startswith("--outcome="): outcome = a.split("=",1)[1]
+        elif a.startswith("--scope="): scope = a.split("=",1)[1]
+        elif a.startswith("--tags="): tags = a.split("=",1)[1]
+    result = gb.write_observation(slug, obs_type, topic_key, content, why=why, where=where,
+                                   outcome=outcome, scope=scope,
+                                   tags=[t.strip() for t in tags.split(",") if t.strip()])
+    print(json.dumps({"ok": result.get("ok", False), "id": result.get("id", "")}))
+    return 0
+
+def cmd_get_observation(args):
+    import guardian_brain as gb
+    if len(args) < 2:
+        print('{"observations":[]}')
+        return 0
+    slug = args[0]
+    topic_key = args[1]
+    limit = 5
+    for a in args[2:]:
+        if a.startswith("--limit="): limit = int(a.split("=",1)[1])
+    results = gb.get_observations(slug, topic_key, limit=limit, global_too=True)
+    out = []
+    for r in results:
+        out.append({
+            "content": (r.get("content") or "")[:200],
+            "outcome": r.get("outcome", "info"),
+            "topic_key": r.get("topic_key", topic_key),
+            "importance": r.get("importance", 0),
+        })
+    print(json.dumps({"observations": out}))
+    return 0
+
+def cmd_get_last_good(args):
+    import guardian_brain as gb
+    if len(args) < 2:
+        print('{"observation":null}')
+        return 0
+    slug = args[0]
+    topic_key = args[1]
+    result = gb.get_last_good(slug, topic_key)
+    if result:
+        print(json.dumps({"observation": {"content": (result.get("content") or "")[:200], "outcome": result.get("outcome")}}))
+    else:
+        print('{"observation":null}')
+    return 0
+
+def cmd_plan_or_act(args):
+    if not args:
+        print('{"action":"investigate","plan_type":"research","reason":"No question provided"}')
+        return 0
+    question = " ".join(args)
+    q = question.lower()
+    confidence = 0.5
+    complexity = "high" if len(question) > 150 or any(k in q for k in ("migr", "refactor", "arquitectur", "reestructur")) else "low"
+    if confidence >= 0.8 and complexity == "low":
+        action, plan_type, reason = "assume", "direct", "Confianza alta + simple → ejecutar"
+    elif confidence >= 0.5 and complexity == "low":
+        action, plan_type, reason = "ask_little", "direct", "Confianza media + simple → preguntar"
+    elif complexity == "high" and confidence >= 0.6:
+        action, plan_type, reason = "plan", "openspec", "Compleja → planificar"
+    else:
+        action, plan_type, reason = "investigate", "research", "Baja confianza → investigar"
+    print(json.dumps({"action": action, "plan_type": plan_type, "reason": reason}))
+    return 0
+
+def cmd_compact_memory(args):
+    import guardian_brain as gb
+    if not args:
+        print('{"ok":false,"lines":0,"removed":0}')
+        return 0
+    slug = args[0]
+    result = gb.compact_guardian_md(slug)
+    print(json.dumps(result))
+    return 0
+
 # ── main ────────────────────────────────────────────────────────
 
 def main():
@@ -3564,6 +3668,24 @@ def main():
 
     if cmd == "rag":
         return cmd_rag(cmd_args)
+
+    if cmd in ("save-observation", "save_observation"):
+        return cmd_save_observation(cmd_args)
+
+    if cmd in ("get-observation", "get_observation"):
+        return cmd_get_observation(cmd_args)
+
+    if cmd in ("get-last-good", "get_last_good"):
+        return cmd_get_last_good(cmd_args)
+
+    if cmd in ("plan-or-act", "plan_or_act"):
+        return cmd_plan_or_act(cmd_args)
+
+    if cmd in ("compact-memory", "compact_memory"):
+        return cmd_compact_memory(cmd_args)
+
+    if cmd in ("analyze-intent", "analyze_intent"):
+        return cmd_analyze_intent(cmd_args)
 
     if cmd == "web":
         return cmd_web(cmd_args)
