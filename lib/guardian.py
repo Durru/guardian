@@ -2740,18 +2740,21 @@ def cmd_projects(subcmd, subargs):
         import re as _re
         count = 0
         freed = 0
-        for slug in list(projects):
-            if _re.match(r'^[a-z]+-[0-9a-f]{8}$', slug):
-                path = shared.project_dir(slug)
-                sz = sum(f.stat().st_size for f in path.rglob('*') if f.is_file()) if path.exists() else 0
-                import shutil
-                shutil.rmtree(path, ignore_errors=True)
-                config = shared.project_dir(slug) / "config.yaml"
-                if config.exists():
-                    config.unlink()
-                count += 1
-                freed += sz
-                print(f"  ✂ {slug:<40} {_fmt_size(sz)}")
+        if not shared.MEMORY_DIR.exists():
+            print("  No hay directorio de proyectos.")
+            return 0
+        for entry in sorted(shared.MEMORY_DIR.iterdir()):
+            if not entry.is_dir():
+                continue
+            slug = entry.name
+            if not _re.match(r'^[a-z]+-[0-9a-f]{8}$', slug):
+                continue
+            sz = sum(f.stat().st_size for f in entry.rglob('*') if f.is_file()) if entry.exists() else 0
+            import shutil
+            shutil.rmtree(entry, ignore_errors=True)
+            count += 1
+            freed += sz
+            print(f"  ✂ {slug:<40} {_fmt_size(sz)}")
         print(shared._("projects_cleanup_done", count=count, size=_fmt_size(freed)))
         return 0
 
