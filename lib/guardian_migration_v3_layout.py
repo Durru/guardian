@@ -93,7 +93,7 @@ def migrate(slug: str, dry_run: bool = False) -> dict:
     if not v3_dir.exists():
         return {"ok": False, "error": f"v3 project '{slug}' not found at {v3_dir}"}
 
-    # v4 root should already exist (project_root_path creates it)
+    # v4 root should already exist (project_dir creates it)
     v4_root.mkdir(parents=True, exist_ok=True)
     v4_brain.mkdir(parents=True, exist_ok=True)
 

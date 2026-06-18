@@ -397,7 +397,8 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             if not slug:
                 return _json_response(self, 400, {"error": "slug required"})
             state, path = guardian_genome.fork_branch(slug)
-            return _json_response(self, 200, {"slug": slug, "path": str(path), "branch_hash": guardian_genome._branch_hash()})
+            branch_info = guardian_genome.branch_status(slug)
+            return _json_response(self, 200, {"slug": slug, "path": str(path), "branch": branch_info})
 
         if parsed.path == "/conciencia/cycle":
             slug = _project_slug(params, body)

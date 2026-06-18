@@ -893,7 +893,7 @@ def regenerate_guardian_md(slug: str) -> dict:
     return write_guardian_md(slug, content)
 
 
-# ── Observation system (v4.1.0) ─────────────────────────────────
+# ── Observation system ─────────────────────────────────
 
 
 def write_observation(slug: str, obs_type: str, topic_key: str, content: str,

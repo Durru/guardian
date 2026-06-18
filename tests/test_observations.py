@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for v4.1.0 observation system: write_observation, get_observations, get_last_good, etc."""
+"""Tests for observation system: write_observation, get_observations, get_last_good, etc."""
 
 import json
 import os

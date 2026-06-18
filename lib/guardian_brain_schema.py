@@ -261,7 +261,7 @@ def _apply_schema(db_path: Path, default_level: str):
     conn = sqlite3.connect(str(db_path))
     try:
         conn.executescript(NODE_DDL)
-        # v4.1.0: migrate existing databases — add new columns if missing
+        # v4.5.0: migrate existing databases — add new columns if missing
         existing_cols = [r[1] for r in conn.execute("PRAGMA table_info(nodes)").fetchall()]
         for col_name, col_def in [("topic_key", "topic_key TEXT"),
                                    ("outcome", "outcome TEXT DEFAULT 'info'"),

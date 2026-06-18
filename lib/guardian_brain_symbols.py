@@ -4,7 +4,7 @@
 Indexa el código fuente usando tree-sitter. Produce un mapa real
 del proyecto (functions, classes, methods, routes, imports).
 
-Vive en la raíz del proyecto (project_root_path).
+Vive en la raíz del proyecto (project_dir).
 """
 
 from __future__ import annotations

@@ -741,7 +741,8 @@ def _handle_call(tool_name, args, id_val):
     elif tool_name == "branch_fork":
         slug = args.get("slug", "")
         state, path = guardian_genome.fork_branch(slug)
-        _respond(id_val, {"slug": slug, "path": str(path), "branch_hash": guardian_genome._branch_hash()})
+        branch_info = guardian_genome.branch_status(slug)
+        _respond(id_val, {"slug": slug, "path": str(path), "branch": branch_info})
 
     elif tool_name == "activate_guardian":
         slug = args.get("slug", "")

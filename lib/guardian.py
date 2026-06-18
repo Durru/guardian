@@ -1435,7 +1435,7 @@ def cmd_post_deploy(slug, auto=False):
 # ── cmd_docs_scan ──────────────────────────────────────────────
 
 def cmd_docs_scan(slug):
-    """v4.1.0: Detecta stack del proyecto y lo escribe en el brain persistente.
+    """Detecta stack del proyecto y lo escribe en el brain persistente.
 
     Ya NO genera templates de documentación. En su lugar:
     1. Detecta stack del proyecto
@@ -1513,7 +1513,7 @@ def cmd_docs_scan(slug):
     # Re-generate compact GUARDIAN.md from brain nodes
     gb.regenerate_guardian_md(slug)
 
-    _run_audit_record(slug, "docs_scan", [], "ok", "Docs scan v4.1.0: stack escrito en brain + GUARDIAN.md regenerado")
+    _run_audit_record(slug, "docs_scan", [], "ok", "Docs scan: stack escrito en brain + GUARDIAN.md regenerado")
     try:
         subprocess.run([sys.executable, str(RAG_SCRIPT), "index", "--slug", slug, "--force"],
                        capture_output=True, text=True, timeout=60)
@@ -3226,7 +3226,7 @@ def cmd_stack(action, slug):
     except Exception as e:
         return err(f"Error al ejecutar {action}: {e}")
 
-# ── v4.1.0: cmd wrappers for MCP tools (usados desde plugin) ──
+# ── cmd wrappers for MCP tools (usados desde plugin) ──
 
 def cmd_analyze_intent(args):
     if not args:
@@ -3340,7 +3340,7 @@ def cmd_compact_memory(args):
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h", "--ayuda"):
-        print("🛡️  Nexxoria Guardian v4.1.0")
+        print("🛡️  Nexxoria Guardian v4.5.0")
         print()
         print("Usage: guardian <command> [args...]")
         print()

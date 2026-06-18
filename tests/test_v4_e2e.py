@@ -239,7 +239,7 @@ export function formatDate(date: Date): string {
         """Migration module: status detection."""
         import guardian_migration_v3_layout as migration
 
-        # Status should detect project even without v3 data (v4 path created by project_root_path)
+        # Status should detect project even without v3 data (v4 path created by project_dir)
         s = migration.status(SLUG)
         self.assertEqual(s["slug"], SLUG)
         self.assertIn("v3_exists", s)
