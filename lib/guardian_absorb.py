@@ -23,6 +23,7 @@ SKILL_DIRS = [
     Path(os.environ.get("HOME", "/root")) / ".config" / "opencode" / "skills",
 ]
 ALWAYS_RELEVANT = {"brainstorming", "context-engineering"}
+EXCLUDED_SKILLS = {"nexxoria-guardian"}
 
 
 def _knowledge_dir(slug):
@@ -88,6 +89,8 @@ def cmd_ingest(slug, rebuild=False):
 
     tomes = []
     for name in selected:
+        if name in EXCLUDED_SKILLS:
+            continue
         skill = skills.get(name, {"name": name, "description": ""})
         tome_name = f"{name}.md"
         tome_path = knowledge_dir / tome_name
@@ -357,6 +360,8 @@ def cmd_match(slug):
 
     scored = []
     for name, skill in skills.items():
+        if name in EXCLUDED_SKILLS:
+            continue
         rating_total = skill.get("total", 25)
         keywords = skill.get("keywords", [])
         triggers = skill.get("triggers", [])
@@ -795,6 +800,8 @@ def cmd_classify(slug, json_output=False):
     # Score all skills
     scored = []
     for name, skill in all_skills.items():
+        if name in EXCLUDED_SKILLS:
+            continue
         s, reasons = _score_skill_vs_features(name, skill, features)
         scored.append((name, s, reasons, skill.get("stars", ""), skill.get("total", 0)))
 

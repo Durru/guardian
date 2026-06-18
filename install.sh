@@ -287,19 +287,7 @@ install_opencode() {
     fi
     ok "OpenCode: $(opencode --version 2>&1 | head -1)"
 
-    # 1. Skill
-    local skill_dir="${HOME}/.agents/skills/nexxoria-guardian"
-    info "Instalando skill: $skill_dir"
-    mkdir -p "$skill_dir"
-    if [ -L "$skill_dir/SKILL.md" ] && [ "$(readlink "$skill_dir/SKILL.md")" = "$GUARDIAN_HOME/SKILL.md" ]; then
-        ok "Skill ya enlazada"
-    else
-        rm -f "$skill_dir/SKILL.md"
-        ln -sf "$GUARDIAN_HOME/SKILL.md" "$skill_dir/SKILL.md"
-        ok "Skill instalada"
-    fi
-
-    # 2. Slash command
+    # 1. Slash command
     local cmd_file="${HOME}/.config/opencode/commands/guardian.md"
     info "Instalando @guardian command: $cmd_file"
     mkdir -p "$(dirname "$cmd_file")"
@@ -313,7 +301,7 @@ install_opencode() {
         ok "Comando @guardian instalado"
     fi
 
-    # 3. Plugin (TS)
+    # 2. Plugin (TS)
     local plugin_src="$SOURCE_DIR/.opencode/plugins/guardian.ts"
     if [ -f "$plugin_src" ]; then
         local plugin_dst_dir="${HOME}/.config/opencode/plugins"
@@ -342,7 +330,7 @@ else:
 " 2>/dev/null && ok "Plugin registrado en OpenCode" || warn "No se pudo registrar plugin"
     fi
 
-    # 4. MCP server
+    # 3. MCP server
     local oc_config="${HOME}/.config/opencode/opencode.json"
     info "Registrando MCP server..."
     if [ -f "$oc_config" ]; then
@@ -558,7 +546,6 @@ do_uninstall() {
     warn "  - /var/lib/nexxoria-guardian (o ~/.local/state/nexxoria-guardian)"
     warn "  - ~/.guardian/ (env vars, templates, specializations)"
     warn "  - /usr/local/bin/guardian symlink (o ~/.local/bin/guardian)"
-    warn "  - ~/.agents/skills/nexxoria-guardian/"
     warn "  - ~/.config/opencode/{commands,plugins,opencode.json} entry for guardian"
     if [ -f "/etc/systemd/system/nexxoria-guardian.service" ]; then
         warn "  - /etc/systemd/system/nexxoria-guardian.service"
@@ -628,9 +615,8 @@ do_uninstall() {
         fi
     done
 
-    # OpenCode integration
-    for f in "${HOME}/.agents/skills/nexxoria-guardian" \
-             "${HOME}/.config/opencode/commands/guardian.md" \
+    # OpenCode integration (skill dir removed since v4.6.0)
+    for f in "${HOME}/.config/opencode/commands/guardian.md" \
              "${HOME}/.config/opencode/plugins/guardian.ts"; do
         if [ -e "$f" ] || [ -L "$f" ]; then
             rm -rf "$f" 2>/dev/null || sudo rm -rf "$f"
