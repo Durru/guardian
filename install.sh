@@ -329,6 +329,7 @@ else:
     print('exists')
 " 2>/dev/null && ok "Plugin registrado en OpenCode" || warn "No se pudo registrar plugin"
     fi
+    fi
 
     # 3. MCP server
     local oc_config="${HOME}/.config/opencode/opencode.json"
