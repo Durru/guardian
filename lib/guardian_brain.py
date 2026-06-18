@@ -1049,7 +1049,7 @@ def regenerate_guardian_md(slug: str) -> dict:
     return write_guardian_md(slug, content)
 
 
-# ── Spiking Memory — activation potentials (v4.5.1) ─────────────────
+# ── Spiking Memory — activation potentials (v4.6.0) ─────────────────
 
 
 def _ensure_activation_table(slug: str, level: str):

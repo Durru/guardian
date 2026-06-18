@@ -241,7 +241,7 @@ class Conciencia:
         if percept.event.get("explicit_question"):
             score += 0.1
 
-        # v4.5.1: kNN prediction boost
+        # v4.6.0: kNN prediction boost
         if self.slug:
             question = percept.event.get("question", "")
             pred = predict_action(self.slug, question, self.mode, score)
@@ -478,7 +478,7 @@ evolve = _evolve
 
 
 # ═══════════════════════════════════════════════════════════════════
-# E: Conciencia Predictiva — kNN sobre ciclos pasados (v4.5.1)
+# E: Conciencia Predictiva — kNN sobre ciclos pasados (v4.6.0)
 # ═══════════════════════════════════════════════════════════════════
 
 def _cycle_to_query_text(cycle: dict) -> str:

@@ -1,4 +1,4 @@
-"""Tests for v4.5.1 neural features: embeddings, kNN, governor_learn, spiking memory."""
+"""Tests for v4.6.0 neural features: embeddings, kNN, governor_learn, spiking memory."""
 import json
 import os
 import shutil

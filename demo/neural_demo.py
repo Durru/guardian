@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Neural Demo — ejercita todo el pipeline neuronal de Guardian v4.5.1.
+Neural Demo — ejercita todo el pipeline neuronal de Guardian v4.6.0.
 
 Uso: PYTHONPATH=lib python3 demo/neural_demo.py
 """
@@ -28,7 +28,7 @@ brain._reset_conn_cache()
 # Setup minimal genome for conciencia
 (Path(tmpdir) / "genome").mkdir(parents=True, exist_ok=True)
 (Path(tmpdir) / "genome" / "identity.yaml").write_text("""\
-version: 4.5.1
+  version: 4.6.0
 creator: demo
 identity:
   name: Demo Guardian
@@ -39,7 +39,7 @@ consciousness:
 """)
 
 print("=" * 60)
-print("🧠  Guardian Neural Demo — v4.5.1")
+print("🧠  Guardian Neural Demo — v4.6.0")
 print("=" * 60)
 
 # ── A: Embeddings ──────────────────────────────────────────────────────

@@ -38,7 +38,7 @@ class TestNeuralPipeline(unittest.TestCase):
         genome_dir = cls.tmpdir / "genome"
         genome_dir.mkdir(parents=True, exist_ok=True)
         (genome_dir / "identity.yaml").write_text("""\
-version: 4.5.1
+  version: 4.6.0
 creator: test
 identity:
   name: Nexxoria Guardian

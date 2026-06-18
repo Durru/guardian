@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS event_log (
 CREATE INDEX IF NOT EXISTS idx_el_ts ON event_log(ts);
 CREATE INDEX IF NOT EXISTS idx_el_type ON event_log(event_type);
 
--- v4.5.1: Spiking Memory — activation potentials
+-- v4.6.0: Spiking Memory — activation potentials
 CREATE TABLE IF NOT EXISTS activation_potentials (
     node_id TEXT PRIMARY KEY,
     potential REAL DEFAULT 0.5,

@@ -22,7 +22,7 @@ SKILL_DIRS = [
     Path(os.environ.get("HOME", "/root")) / ".agents" / "skills",
     Path(os.environ.get("HOME", "/root")) / ".config" / "opencode" / "skills",
 ]
-ALWAYS_RELEVANT = {"nexxoria-guardian", "brainstorming", "context-engineering"}
+ALWAYS_RELEVANT = {"brainstorming", "context-engineering"}
 
 
 def _knowledge_dir(slug):

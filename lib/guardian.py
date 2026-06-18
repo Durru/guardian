@@ -2229,7 +2229,7 @@ def cmd_evolve(slug, cmd_args):
 
 
 def cmd_learn(slug, cmd_args):
-    """v4.5.1: Governor adaptativo — aprende de feedback del usuario."""
+    """v4.6.0: Governor adaptativo — aprende de feedback del usuario."""
     import guardian_brain
     if not cmd_args:
         print("Uso: guardian learn <slug> <feedback>")
@@ -2251,7 +2251,7 @@ def cmd_learn(slug, cmd_args):
 
 
 def cmd_feedback(slug, cmd_args):
-    """v4.5.1: Registrar feedback del usuario para el clasificador neuronal."""
+    """v4.6.0: Registrar feedback del usuario para el clasificador neuronal."""
     if not cmd_args:
         print("Uso: guardian feedback <slug> <topic_key> [content]")
         return 1
@@ -3378,7 +3378,10 @@ def cmd_compact_memory(args):
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h", "--ayuda"):
-        print("🛡️  Nexxoria Guardian v4.5.1")
+        print("🛡️  Nexxoria Guardian v4.6.0")
+
+
+
         print()
         print("Usage: guardian <command> [args...]")
         print()
@@ -3471,7 +3474,7 @@ def main():
         return 0
 
     if sys.argv[1] in ("--version", "-v"):
-        print("Nexxoria Guardian v4.5.1")
+        print("Nexxoria Guardian v4.6.0")
         return 0
 
     args = sys.argv[1:]
