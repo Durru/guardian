@@ -54,18 +54,39 @@ def _tokenize(text: str) -> list[str]:
 _EMBED_BACKEND = os.environ.get("GUARDIAN_EMBED_BACKEND", "auto").lower()
 _EMBED_CACHE = {}
 _SENTENCE_TRANSFORMER = None
+_ST_MODEL_READY = False
 
 
 def _init_transformer():
-    """Lazy-init sentence-transformers. Safe to call repeatedly."""
-    global _SENTENCE_TRANSFORMER
+    """Lazy-init sentence-transformers. Safe to call repeatedly.
+
+    v4.6.0: intento al import del modulo, con timeout.
+    """
+    global _SENTENCE_TRANSFORMER, _ST_MODEL_READY
+    if _ST_MODEL_READY:
+        return True
     if _SENTENCE_TRANSFORMER is not None:
         return True
     try:
-        from sentence_transformers import SentenceTransformer
-        model_name = os.environ.get("GUARDIAN_EMBED_MODEL", "all-MiniLM-L6-v2")
-        _SENTENCE_TRANSFORMER = SentenceTransformer(model_name)
-        return True
+        import threading
+        result = [None]
+
+        def _load():
+            try:
+                from sentence_transformers import SentenceTransformer
+                model_name = os.environ.get("GUARDIAN_EMBED_MODEL", "all-MiniLM-L6-v2")
+                result[0] = SentenceTransformer(model_name)
+            except Exception:
+                result[0] = None
+
+        t = threading.Thread(target=_load, daemon=True)
+        t.start()
+        t.join(timeout=10)
+        if result[0] is not None:
+            _SENTENCE_TRANSFORMER = result[0]
+            _ST_MODEL_READY = True
+            return True
+        return False
     except Exception:
         return False
 
@@ -554,9 +575,36 @@ def _get_governor_thresholds(slug: str) -> dict:
     return th
 
 
-def governor_evaluate(slug: str, candidate: dict) -> dict:
-    """Evaluate whether a candidate node should be written."""
+def _calculate_dynamic_thresholds(slug: str) -> dict:
+    """v4.6.0: Ajusta thresholds según el historial del proyecto.
+
+    Si hubo muchas fusiones, sube duplicate_threshold.
+    Si hubo muchos descartes, sube importance_floor.
+    """
     th = _get_governor_thresholds(slug)
+    try:
+        import sqlite3
+        import guardian_brain_schema as schema
+        db = schema.brain_db_path(slug, "semantic")
+        if not db.exists():
+            return th
+        conn = sqlite3.connect(str(db))
+        total = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+        if total > 50:
+            # More nodes = higher standard for duplicates
+            th["duplicate_threshold"] = min(0.96, th["duplicate_threshold"] + 0.01)
+        conn.close()
+    except Exception:
+        pass
+    return th
+
+
+def governor_evaluate(slug: str, candidate: dict) -> dict:
+    """Evaluate whether a candidate node should be written.
+    
+    v4.6.0: usa dynamic thresholds ajustados por proyecto.
+    """
+    th = _calculate_dynamic_thresholds(slug)
     content = candidate.get("content", "")
     kind = candidate.get("kind", "unknown")
     level = candidate.get("level", "semantic")
@@ -1677,6 +1725,12 @@ def session_end(slug: str, reason: str = "explicit") -> dict:
     compact_result = None
     if compact_check["should"]:
         compact_result = auto_compact(slug, dry_run=False)
+    # v4.6.0: auto GC por potencial al cerrar sesión
+    for level in schema.PROJECT_LEVELS:
+        try:
+            gc_by_potential(slug, level, threshold=0.12, dry_run=False)
+        except Exception:
+            pass
     gmd = regenerate_guardian_md(slug)
     handoff = {
         "last_session": _now_epoch(),

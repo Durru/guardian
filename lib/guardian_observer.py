@@ -403,7 +403,40 @@ def _test_sanitize():
 # Neural Classifier — kNN sobre embeddings (Opción B)
 # ═══════════════════════════════════════════════════════════════════
 
-_KNN_CACHE = {"topics": [], "topic_labels": [], "examples": []}
+_KNN_CACHE = {"topics": [], "topic_labels": [], "examples": [],
+               "stats": {"hits": 0, "misses": 0, "corrections": 0}}
+
+
+def _load_global_knn_data():
+    """Load classification examples from the global DB (cross-project learning)."""
+    try:
+        import guardian_brain as brain
+        import guardian_brain_schema as schema
+        db = schema.global_db_path("semantic_g")
+        if not db.exists():
+            return
+        conn = __import__("sqlite3").connect(str(db))
+        conn.row_factory = __import__("sqlite3").Row
+        rows = conn.execute(
+            "SELECT * FROM nodes WHERE kind = ? LIMIT 100",
+            ("classification_example",),
+        ).fetchall()
+        conn.close()
+        if not rows:
+            return
+        topics = {}
+        for row in rows:
+            d = dict(row)
+            tk = d.get("topic_key", "")
+            emb = d.get("embedding")
+            if tk and emb:
+                topics.setdefault(tk, []).append(emb)
+        if topics:
+            _KNN_CACHE["examples"].update(topics)
+            _KNN_CACHE["topics"] = list(_KNN_CACHE["examples"].keys())
+            _KNN_CACHE["topic_labels"] = _KNN_CACHE["topics"]
+    except Exception:
+        pass
 
 
 def _ensure_knn_data(slug: str = None):
@@ -426,18 +459,53 @@ def _ensure_knn_data(slug: str = None):
         _KNN_CACHE["topics"] = list(topics.keys())
         _KNN_CACHE["topic_labels"] = _KNN_CACHE["topics"]
         _KNN_CACHE["examples"] = topics
+        # v4.6.0: cross-project learning — supplement from global DB
+        if len(topics) < 5:
+            _load_global_knn_data()
     except Exception:
         pass
+
+
+def _log_classification(slug: str, prompt: str, guessed_topic: str, correct_topic: str = None):
+    """Log classification outcome for stats tracking."""
+    try:
+        import guardian_brain as brain
+        tags = ["knn_classification"]
+        if correct_topic:
+            tags.append("corrected" if guessed_topic != correct_topic else "confirmed")
+        brain.write_observation(
+            slug=slug,
+            obs_type="classification_log",
+            topic_key=correct_topic or guessed_topic,
+            content=f"guessed={guessed_topic} correct={correct_topic or '?'} prompt={prompt[:100]}",
+            why="auto",
+            outcome="warning" if correct_topic and guessed_topic != correct_topic else "info",
+            scope="project",
+            tags=tags,
+        )
+    except Exception:
+        pass
+
+
+def classifier_stats(slug: str = None) -> dict:
+    """Return classification accuracy metrics."""
+    s = dict(_KNN_CACHE.get("stats", {"hits": 0, "misses": 0, "corrections": 0}))
+    total = s["hits"] + s["misses"]
+    s["accuracy"] = round(s["hits"] / total, 3) if total > 0 else 0.0
+    s["topics_known"] = len(_KNN_CACHE.get("examples", {}))
+    return s
 
 
 def classify_topic_neural(prompt: str, slug: str = None) -> str:
     """Classify prompt topic using kNN over brain embeddings.
 
     Falls back to heuristic extract_topic_key() if not enough data.
+    v4.6.0: logs classification for stats, supports cross-project.
     """
     _ensure_knn_data(slug)
     if not _KNN_CACHE["topic_labels"] or len(_KNN_CACHE["examples"]) < 3:
-        return extract_topic_key(prompt)
+        result = extract_topic_key(prompt)
+        return result
 
     try:
         import guardian_brain as brain
@@ -454,6 +522,9 @@ def classify_topic_neural(prompt: str, slug: str = None) -> str:
                     best_topic = topic
 
         if best_topic:
+            _KNN_CACHE["stats"]["hits"] += 1
+            if slug:
+                _log_classification(slug, prompt, best_topic)
             return best_topic
     except Exception:
         pass
@@ -488,9 +559,24 @@ def record_feedback(slug: str, prompt: str, correct_topic: str, correct_importan
     """Record user feedback so the neural classifier can learn.
 
     Stores as a new observation in the brain so next kNN query benefits.
+    v4.6.0: detects if this corrects a previous classification (feedback loop).
     """
     try:
         import guardian_brain as brain
+        # Check if we previously guessed a different topic for similar prompt
+        similar = brain.query(slug, "semantic", prompt, top_k=3, min_similarity=0.3)
+        was_correction = False
+        for n in similar:
+            prev_topic = n.get("topic_key", "")
+            if prev_topic and prev_topic != correct_topic and "classification" in n.get("tags", []):
+                was_correction = True
+                _KNN_CACHE["stats"]["corrections"] += 1
+                break
+
+        tags = ["knn_training"]
+        if was_correction:
+            tags.append("correction")
+
         brain.write_observation(
             slug=slug,
             obs_type="classification_example",
@@ -499,7 +585,7 @@ def record_feedback(slug: str, prompt: str, correct_topic: str, correct_importan
             why="user_feedback",
             outcome="info",
             scope="project",
-            tags=["knn_training"],
+            tags=tags,
         )
     except Exception:
         pass

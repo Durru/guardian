@@ -219,10 +219,20 @@ def _collect_chunks(slug, config, source_filter=None):
 # ── Retrieval + Reranking ──
 
 def _rerank(chunks, idf, vocab, query_vec, scope_filter):
+    """Rerank chunks with hybrid TF-IDF + embedding scoring. v4.6.0."""
+    try:
+        import guardian_brain as brain
+        q_emb = brain.embed(" ".join(query_vec[:20])) if query_vec else None
+        embs = [brain.embed(c["content"][:200]) for c in chunks] if q_emb else []
+        emb_sims = brain.cosine_bulk(q_emb, embs) if q_emb and embs else []
+    except Exception:
+        emb_sims = []
+
     scored = []
-    for c in chunks:
+    for i, c in enumerate(chunks):
         c_vec = _embed_text(c["content"], idf, vocab)
         sim = _cosine_sim(query_vec, c_vec)
+        emb_sim = emb_sims[i] if i < len(emb_sims) else 0.0
 
         recency = max(0.0, 1.0 - c.get("age_days", 999) / 90.0)
         type_w = c.get("type_weight", 0.5)
@@ -230,9 +240,10 @@ def _rerank(chunks, idf, vocab, query_vec, scope_filter):
         scope = 1.0 if (scope_filter and c.get("scope", "") and
                         scope_filter in c["scope"]) else 0.0
 
-        score = sim * 0.50 + recency * 0.15 + type_w * 0.15 + hits * 0.10 + scope * 0.10
+        score = sim * 0.30 + emb_sim * 0.30 + recency * 0.15 + type_w * 0.10 + hits * 0.10 + scope * 0.05
         c["_score"] = round(score, 4)
         c["_sim"] = round(sim, 4)
+        c["_emb_sim"] = round(emb_sim, 4)
         scored.append(c)
 
     scored.sort(key=lambda x: x["_score"], reverse=True)

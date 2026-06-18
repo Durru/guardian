@@ -448,7 +448,9 @@ class GuardianHandler(http.server.BaseHTTPRequestHandler):
                 self._send_404()
                 return
 
-            if endpoint == "status.json":
+            if endpoint == "neural":
+                self._serve_neural_status(slug)
+            elif endpoint == "status.json":
                 self._serve_status_json(slug)
             elif endpoint == "memory.json":
                 self._serve_memory_json(slug)
@@ -573,6 +575,66 @@ class GuardianHandler(http.server.BaseHTTPRequestHandler):
     def _serve_audit_json(self, slug):
         audit = _read_audit(slug)
         self._send_json({"slug": slug, "audit": audit, "count": len(audit)})
+
+    def _serve_neural_status(self, slug):
+        """v4.6.0: Neural status as HTML."""
+        import guardian_brain as brain
+        schema_mod = _get_brain_schema()
+        schema_mod.init_project(slug)
+        st = brain.status(slug)
+        counts = st.get("totals", {})
+        gmd = st.get("guardian_md", {})
+        # Get governor thresholds
+        th = brain._get_governor_thresholds(slug)
+        # Get classifier stats
+        try:
+            import guardian_observer as obs
+            cstats = obs.classifier_stats(slug)
+        except Exception:
+            cstats = {}
+        body = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Neural Status — {slug}</title>
+<style>
+body {{ font-family: monospace; max-width: 800px; margin: 2em auto; padding: 0 1em; }}
+h1 {{ color: #2c7; }}
+table {{ width: 100%; border-collapse: collapse; margin: 1em 0; }}
+th, td {{ text-align: left; padding: 0.5em; border-bottom: 1px solid #ddd; }}
+th {{ background: #f5f5f5; }}
+.metric {{ font-size: 1.2em; font-weight: bold; color: #2c7; }}
+</style></head><body>
+<h1>🧠 Neural Status — <code>{slug}</code></h1>
+
+<h2>Brain</h2>
+<table>
+<tr><th>Level</th><th>Nodes</th></tr>
+<tr><td>Semantic</td><td class="metric">{st.get('levels', {}).get('semantic', {}).get('nodes', 0)}</td></tr>
+<tr><td>Episodic</td><td>{st.get('levels', {}).get('episodic', {}).get('nodes', 0)}</td></tr>
+<tr><td>Procedural</td><td>{st.get('levels', {}).get('procedural', {}).get('nodes', 0)}</td></tr>
+<tr><td>Reflection</td><td>{st.get('levels', {}).get('reflection', {}).get('nodes', 0)}</td></tr>
+<tr><td>GUARDIAN.md</td><td>{gmd.get('lines', 0)} lines</td></tr>
+</table>
+
+<h2>Governor Thresholds</h2>
+<table>
+<tr><th>Threshold</th><th>Value</th></tr>
+<tr><td>importance_floor</td><td>{th.get('importance_floor', 0.4):.2f}</td></tr>
+<tr><td>duplicate_threshold</td><td>{th.get('duplicate_threshold', 0.92):.2f}</td></tr>
+<tr><td>contradiction_threshold</td><td>{th.get('contradiction_threshold', 0.85):.2f}</td></tr>
+</table>
+
+<h2>Classifier</h2>
+<table>
+<tr><th>Metric</th><th>Value</th></tr>
+<tr><td>Topics known</td><td>{cstats.get('topics_known', 0)}</td></tr>
+<tr><td>Accuracy</td><td>{cstats.get('accuracy', 0):.1%}</td></tr>
+<tr><td>Hits</td><td>{cstats.get('hits', 0)}</td></tr>
+<tr><td>Misses</td><td>{cstats.get('misses', 0)}</td></tr>
+<tr><td>Corrections</td><td>{cstats.get('corrections', 0)}</td></tr>
+</table>
+
+<p><a href="/{slug}/neural">🔄 Refresh</a></p>
+</body></html>"""
+        self._send_html(body)
 
     def _serve_guardian_md(self, slug):
         """Serve GUARDIAN.md as editable HTML."""
