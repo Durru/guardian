@@ -32,7 +32,7 @@ def _v3_project_dir(slug: str) -> Path:
 
 
 def _v4_root(slug: str) -> Path:
-    return shared.project_root_path(slug)
+    return shared.project_dir(slug)
 
 
 def _v4_brain_dir(slug: str) -> Path:
@@ -172,14 +172,14 @@ def migrate(slug: str, dry_run: bool = False) -> dict:
         shared.write_json(v4_link, {"project_root": actual_root, "linked_at": shared.ts()})
 
     # 10. Create/update branch.json
-    branch = shared.user_branch_path()
+    branch = shared.project_dir(slug)
     v4_branch_json = branch / "branch.json"
     if not v4_branch_json.exists() and not dry_run:
         shared.write_json(v4_branch_json, {
             "created_at": shared.ts(),
-            "guardian_version": "4.0.0",
+            "guardian_version": "4.5.0",
             "migrated_from": "v3",
-            "projects": [slug],
+            "slug": slug,
         })
 
     # Run the brain schema init to create the v4 DB tables

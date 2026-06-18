@@ -26,25 +26,15 @@ ALWAYS_RELEVANT = {"nexxoria-guardian", "brainstorming", "context-engineering"}
 
 
 def _knowledge_dir(slug):
-    """Path to project knowledge tomes within the branch (fallback to legacy)."""
-    new_path = shared.branch_path_for(slug, "knowledge", "tomes")
-    if new_path.exists():
-        return new_path
-    legacy = MEMORY_DIR / slug / "knowledge" / "tomes"
-    if legacy.exists():
-        return legacy
-    return new_path
+    path = MEMORY_DIR / slug / "knowledge" / "tomes"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _knowledge_index_path(slug):
-    """Path to knowledge index within the branch (fallback to legacy)."""
-    new_path = shared.branch_path_for(slug, "knowledge", "index.json")
-    if new_path.exists():
-        return new_path
-    legacy = MEMORY_DIR / slug / "knowledge" / "index.json"
-    if legacy.exists():
-        return legacy
-    return new_path
+    path = MEMORY_DIR / slug / "knowledge" / "index.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _skill_summary(skill):

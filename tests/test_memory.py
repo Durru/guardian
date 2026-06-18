@@ -163,6 +163,8 @@ class TestSemanticSearch(unittest.TestCase):
         mem.MEMORY_DIR = self.tmpdir
         mem.shared.MEMORY_DIR = self.tmpdir
         mem.shared.BACKEND_DIR = self.tmpdir
+        # Ensure brain dir exists (project_dir creates it)
+        (self.tmpdir / self.slug / "brain").mkdir(parents=True, exist_ok=True)
         mem._ensure(self.slug)
         # Save some entries
         mem.cmd_save(self.slug, "landmark", "El proyecto usa React con TypeScript")

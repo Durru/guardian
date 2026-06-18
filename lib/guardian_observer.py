@@ -373,10 +373,10 @@ class Observer:
         )
 
     def _propose_pattern(self, event: dict) -> None:
-        """Patterns go to the user branch (proposals, NOT direct modification)."""
+        """Patterns go to the project's evolution proposals."""
         import guardian_genome
         import guardian_shared as shared
-        branch = shared.user_branch_path()
+        branch = shared.project_dir(self.slug)
         guardian_genome.accept_user_proposal(branch, {
             "kind": event.get("type", "pattern"),
             "content": event.get("content", ""),

@@ -41,17 +41,12 @@ for m in list(sys.modules.keys()):
 
 class TestV4Filesystem(unittest.TestCase):
 
-    def test_user_branch_path(self):
+    def test_project_dir(self):
         import guardian_shared as shared
-        p = shared.user_branch_path()
+        p = shared.project_dir("test-proj-v45")
         self.assertTrue(p.exists())
-        self.assertIn("users", str(p))
-
-    def test_project_root_path(self):
-        import guardian_shared as shared
-        p = shared.project_root_path("test-proj")
-        self.assertTrue(p.exists())
-        self.assertIn("projects/test-proj/root", str(p))
+        self.assertIn("projects/test-proj-v45", str(p))
+        self.assertTrue((p / "brain").exists())
 
 
 # ── v4 Genoma ───────────────────────────────────────────────────
@@ -77,7 +72,7 @@ class TestV4Genoma(unittest.TestCase):
     def test_apply_to_user_branch(self):
         import guardian_genome
         import guardian_shared as shared
-        branch = shared.user_branch_path()
+        branch = shared.project_dir("genome-test")
         result = guardian_genome.apply_to_user_branch(branch)
         self.assertTrue(result["ok"])
         self.assertEqual(result["genome_version"], 4)

@@ -406,13 +406,15 @@ class CodeGraph:
 def get_codegraph(slug: str, project_root: Path = None) -> CodeGraph:
     """Get or create the CodeGraph for a project."""
     if project_root is None:
-        project_root = shared.project_root_path(slug)
+        config = shared.read_config(slug)
+        root_str = config.get("project_root", "")
+        project_root = Path(root_str) if root_str else Path.cwd()
     return CodeGraph(project_root, slug=slug)
 
 
 def index_project(slug: str, source_root: Path, full: bool = True) -> dict:
     """Index a project. Called from `guardian activate`."""
-    cg = get_codegraph(slug, project_root=shared.project_root_path(slug))
+    cg = get_codegraph(slug)
     if full or not cg.has_index():
         return cg.full_index(source_root)
     return cg.incremental_index(source_root, since=time.time() - 86400)

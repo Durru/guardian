@@ -117,8 +117,7 @@ class TestConcienciaCore(unittest.TestCase):
 
     def test_save_learning(self):
         guardian_conciencia.save_learning(self.slug, {"type": "test", "message": "hello"})
-        branch_path = shared.user_branch_path()
-        learn_dir = branch_path / "projects" / self.slug / "learnings"
+        learn_dir = shared.project_dir(self.slug) / "learnings"
         files = list(learn_dir.glob("*.json"))
         self.assertEqual(len(files), 1)
         data = json.loads(files[0].read_text())
@@ -128,18 +127,20 @@ class TestConcienciaCore(unittest.TestCase):
 class TestGenomeCore(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp())
-        self.orig_branches = guardian_genome.BRANCHES_DIR
-        guardian_genome.BRANCHES_DIR = self.tmpdir / "branches"
-        guardian_genome.BRANCHES_DIR.mkdir(parents=True, exist_ok=True)
+        self.orig_mem = shared.MEMORY_DIR
+        self.orig_backend = shared.BACKEND_DIR
+        shared.MEMORY_DIR = self.tmpdir
+        shared.BACKEND_DIR = self.tmpdir
 
     def tearDown(self):
-        guardian_genome.BRANCHES_DIR = self.orig_branches
+        shared.MEMORY_DIR = self.orig_mem
+        shared.BACKEND_DIR = self.orig_backend
         shutil.rmtree(self.tmpdir)
 
     def test_fork_branch_creates_dirs(self):
         identity, path = guardian_genome.fork_branch("testuser")
         self.assertTrue(path.exists())
-        self.assertTrue((path / "memory").exists())
+        self.assertTrue((path / "brain").exists())
         self.assertTrue((path / "knowledge" / "tomes").exists())
         self.assertTrue((path / "learnings").exists())
 
@@ -147,14 +148,14 @@ class TestGenomeCore(unittest.TestCase):
         guardian_genome.fork_branch("user1")
         branches = guardian_genome.list_branches()
         self.assertGreaterEqual(len(branches), 1)
-        found = any("user1" in b.get("projects", []) for b in branches)
+        found = any(b.get("slug") == "user1" for b in branches)
         self.assertTrue(found)
 
     def test_branch_status_returns_info(self):
         guardian_genome.fork_branch("status-test")
         info = guardian_genome.branch_status("status-test")
         self.assertIsNotNone(info)
-        self.assertEqual(info["project"]["slug"], "status-test")
+        self.assertEqual(info["slug"], "status-test")
 
     def test_branch_status_nonexistent(self):
         info = guardian_genome.branch_status("no-such-user")
@@ -252,13 +253,11 @@ class TestActivateFlow(unittest.TestCase):
         self.proj.mkdir(parents=True, exist_ok=True)
         self.orig_mem = shared.MEMORY_DIR
         self.orig_backend = shared.BACKEND_DIR
-        self.orig_genome_branches = guardian_genome.BRANCHES_DIR
         shared.MEMORY_DIR = self.tmpdir
         shared.BACKEND_DIR = self.tmpdir
-        guardian_genome.BRANCHES_DIR = shared.BACKEND_DIR / "genome" / "branches"
-        (self.tmpdir / "genome" / "branches" / "default").mkdir(parents=True, exist_ok=True)
-        (self.tmpdir / "genome" / "branches" / "default" / "identity.yaml").write_text(
-            "version: 2.0.0\nuser: default\n", encoding="utf-8"
+        (self.tmpdir / "genome").mkdir(parents=True, exist_ok=True)
+        (self.tmpdir / "genome" / "identity.yaml").write_text(
+            "name: Test Guardian\ncreator: test\nversion: '4.5.0'\n", encoding="utf-8"
         )
         self.orig_home = os.environ.get("GUARDIAN_HOME", "")
         self.orig_data = os.environ.get("GUARDIAN_DATA", "")
@@ -268,7 +267,6 @@ class TestActivateFlow(unittest.TestCase):
     def tearDown(self):
         shared.MEMORY_DIR = self.orig_mem
         shared.BACKEND_DIR = self.orig_backend
-        guardian_genome.BRANCHES_DIR = self.orig_genome_branches
         if self.orig_home:
             os.environ["GUARDIAN_HOME"] = self.orig_home
         else:
@@ -282,8 +280,8 @@ class TestActivateFlow(unittest.TestCase):
     def test_fork_branch_creates_paths(self):
         state, path = guardian_genome.fork_branch(self.slug, force=True)
         self.assertTrue(path.exists())
-        self.assertTrue((path / "state.json").exists())
-        self.assertIn(self.slug, state.get("projects", {}))
+        self.assertTrue((path / "branch.json").exists())
+        self.assertEqual(state.get("slug"), self.slug)
 
     def test_activate_guardian_mcp_responds(self):
         orig_stdout = sys.stdout
@@ -304,7 +302,8 @@ class TestActivateFlow(unittest.TestCase):
     def test_activate_fork_creates_branch(self):
         state, path = guardian_genome.fork_branch(self.slug, force=True)
         self.assertIsNotNone(state)
-        self.assertIn(self.slug, state["projects"])
+        self.assertEqual(state["slug"], self.slug)
+        self.assertTrue((path / "branch.json").exists())
 
 
 if __name__ == "__main__":

@@ -55,20 +55,12 @@ def _slugify(name):
 def _auto_slug():
     cwd = Path.cwd()
     slug = _slugify(cwd.name)
-    for cfg_path in [
-        MEMORY_DIR / slug / "config.yaml",
-        shared.branch_path_for(slug, "config.yaml"),
-    ]:
-        if cfg_path.exists():
-            return slug
+    if (MEMORY_DIR / slug / "config.yaml").exists():
+        return slug
     for parent in cwd.parents:
         s = _slugify(parent.name)
-        for cfg_path in [
-            MEMORY_DIR / s / "config.yaml",
-            shared.branch_path_for(s, "config.yaml"),
-        ]:
-            if cfg_path.exists():
-                return s
+        if (MEMORY_DIR / s / "config.yaml").exists():
+            return s
     return None
 
 
@@ -187,9 +179,7 @@ def _chunk_memory(slug):
 
 def _chunk_knowledge(slug):
     chunks = []
-    base = shared.branch_path_for(slug, "knowledge", "tomes")
-    if not base.exists():
-        base = MEMORY_DIR / slug / "knowledge" / "tomes"  # legacy
+    base = MEMORY_DIR / slug / "knowledge" / "tomes"
     if not base.exists():
         return chunks
     for path in sorted(base.rglob("*")):
@@ -267,11 +257,7 @@ def _fmt_citation(c):
 # ── Index subcommand ──
 
 def _chunks_file(slug):
-    path = shared.branch_path_for(slug, "rag-chunks.json")
-    if not path.parent.exists():
-        legacy = MEMORY_DIR / slug / "rag-chunks.json"
-        if legacy.parent.exists():
-            return legacy
+    path = MEMORY_DIR / slug / "rag-chunks.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 

@@ -45,8 +45,7 @@ def sanitize_text(text: str) -> str:
 
 def build_manifest(slug: str, version: str) -> dict:
     now_iso = datetime.now(timezone.utc).isoformat()
-    config_path = (shared.BACKEND_DIR / "genome" / "branches" / shared._branch_hash()
-                   / "projects" / slug / "config.yaml")
+    config_path = shared.MEMORY_DIR / slug / "config.yaml"
     config = {}
     if config_path.exists():
         try:

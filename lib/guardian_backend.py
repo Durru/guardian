@@ -122,16 +122,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             return _json_response(self, 200, {"ok": True, "service": "guardian-backend", "pid": os.getpid()})
 
         if parsed.path == "/metrics":
-            branch = shared.get_branch_dir()
-            projects = []
-            if branch.exists():
-                state_file = branch / "state.json"
-                if state_file.exists():
-                    try:
-                        state = json.loads(state_file.read_text(encoding="utf-8"))
-                        projects = list(state.get("projects", {}).keys())
-                    except (json.JSONDecodeError, OSError):
-                        pass
+            projects = shared.discover_projects()
             return _json_response(self, 200, {
                 "projects": len(projects),
                 "project_list": projects,
@@ -209,9 +200,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             slug = _project_slug(params)
             if not slug:
                 return _json_response(self, 400, {"error": "slug required"})
-            tomes_dir = shared.branch_path_for(slug, "knowledge", "tomes")
-            if not tomes_dir.exists():
-                tomes_dir = shared.MEMORY_DIR / slug / "knowledge" / "tomes"
+            tomes_dir = shared.MEMORY_DIR / slug / "knowledge" / "tomes"
             tomes = []
             if tomes_dir.exists():
                 for p in sorted(tomes_dir.iterdir()):

@@ -90,7 +90,7 @@ export function formatDate(date: Date): string {
 
     def setUp(self):
         import guardian_shared as shared
-        root = shared.project_root_path(SLUG)
+        root = shared.project_dir(SLUG)
         (root / "mode-state.json").write_text(
             json.dumps({"mode": "plan", "updated_at": time.time()})
         )
@@ -98,10 +98,9 @@ export function formatDate(date: Date): string {
     def test_1_filesystem_v4_layout(self):
         """Verify v4 filesystem layout exists."""
         import guardian_shared as shared
-        branch = shared.user_branch_path()
-        self.assertTrue(branch.exists())
-        self.assertIn("e2e-test-machine", str(branch))
-        root = shared.project_root_path(SLUG)
+        root = shared.project_dir(SLUG)
+        self.assertTrue(root.exists())
+        self.assertIn(SLUG, str(root))
         self.assertTrue((root / "brain").exists())
 
     def test_2_genome_3_files(self):

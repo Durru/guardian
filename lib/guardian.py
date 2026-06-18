@@ -2127,18 +2127,17 @@ def cmd_branch(slug, cmd_args):
 # ── cmd_evolve ─────────────────────────────────────────────────
 
 def cmd_update(slug, cmd_args):
-    """v4: Apply the latest genome to the user's branch.
+    """v4: Apply the latest genome to the project's branch.json.
 
     This is how the user absorbs a new version of Guardian. The genome
-    (which the creator edits) is the ONLY thing that touches the user branch.
+    (which the creator edits) is the ONLY thing that touches the project branch.
     Shows diff between current and new genome version.
-    Creates a backup of branch.json before applying.
     """
     import shutil
     import guardian_genome
     import guardian_shared as shared
     from pathlib import Path
-    branch = shared.user_branch_path()
+    branch = shared.project_dir(slug) if slug else shared.MEMORY_DIR / "_default"
     branch_file = branch / "branch.json"
 
     # Read current version
@@ -2208,7 +2207,7 @@ def cmd_propose(slug, cmd_args):
         "why": why,
         "ts": 0,
     }
-    branch = shared.user_branch_path()
+    branch = shared.project_dir(slug) if slug else shared.MEMORY_DIR / "_default"
     result = guardian_genome.accept_user_proposal(branch, proposal)
     print(f"  ✓ Proposal accepted: {result['id']}")
     return 0
@@ -2317,7 +2316,7 @@ def cmd_activate(slug=None):
     print()
     print(_("  ✅ Guardian activado para '{slug}'", slug=slug))
     print(_("  Proyecto: {slug}", slug=slug))
-    print(_("  Rama:     {hash}", hash=guardian_genome._slug_hash(slug)[:16]))
+    print(_("  Rama:     {path}", path=str(shared.project_dir(slug))))
     print(_("  Modo:     {mode}", mode=mode))
     print()
     return 0
@@ -3431,7 +3430,7 @@ def main():
         return 0
 
     if sys.argv[1] in ("--version", "-v"):
-        print("Nexxoria Guardian v4.1.0")
+        print("Nexxoria Guardian v4.5.0")
         return 0
 
     args = sys.argv[1:]

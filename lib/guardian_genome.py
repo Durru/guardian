@@ -11,40 +11,30 @@ import yaml
 
 import guardian_shared as shared
 
-_GUARDIAN_HOME = os.environ.get("GUARDIAN_HOME", "")
-_GUARDIAN_DATA = os.environ.get("GUARDIAN_DATA", "")
-
-if _GUARDIAN_HOME:
-    GENOME_DIR = Path(_GUARDIAN_HOME) / "genome"
-elif _GUARDIAN_DATA:
-    GENOME_DIR = Path(_GUARDIAN_DATA) / "genome"
-else:
-    GENOME_DIR = Path("/srv/guardian/genome")
-
-BRANCHES_DIR = shared.BACKEND_DIR / "genome" / "branches"
-IDENTITY_FILE = GENOME_DIR / "identity.yaml"
-SCHEMA_FILE = GENOME_DIR / "schema.yaml"
-CONSCIOUSNESS_FILE = GENOME_DIR / "consciousness.yaml"
-UPDATES_DIR = GENOME_DIR / "updates"
+def _genome_dir():
+    home = os.environ.get("GUARDIAN_HOME", "")
+    data = os.environ.get("GUARDIAN_DATA", "")
+    if home:
+        return Path(home) / "genome"
+    if data:
+        return Path(data) / "genome"
+    return Path("/srv/guardian/genome")
 
 
-def _branch_hash():
-    """Machine-specific hash for the single branch."""
-    return shared._branch_hash()
+def genome_identity_path():
+    return _genome_dir() / "identity.yaml"
 
 
-def _branch_path():
-    """Single branch path for this machine."""
-    return BRANCHES_DIR / _branch_hash()
+def genome_schema_path():
+    return _genome_dir() / "schema.yaml"
 
 
-def _default_branch_path():
-    return BRANCHES_DIR / "default"
+def genome_consciousness_path():
+    return _genome_dir() / "consciousness.yaml"
 
 
-def _projects_dir():
-    """Projects live inside the branch."""
-    return _branch_path() / "projects"
+def genome_updates_dir():
+    return _genome_dir() / "updates"
 
 
 def load_genome():
@@ -53,27 +43,29 @@ def load_genome():
     The identity is yours (inmutable, no se modifica en runtime).
     Schema and consciousness are loaded with safe fallbacks.
     """
+    gd = _genome_dir()
+    identity_file = gd / "identity.yaml"
+    schema_file = gd / "schema.yaml"
+    consciousness_file = gd / "consciousness.yaml"
     result = {}
-    if IDENTITY_FILE.exists():
+    if identity_file.exists():
         try:
-            with open(IDENTITY_FILE, "r", encoding="utf-8") as f:
+            with open(identity_file, "r", encoding="utf-8") as f:
                 result = yaml.safe_load(f) or {}
         except (OSError, yaml.YAMLError):
             result = {}
-    # Schema (v4): definition of brain levels, codegraph, observer, advisor
-    if SCHEMA_FILE.exists():
+    if schema_file.exists():
         try:
-            with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+            with open(schema_file, "r", encoding="utf-8") as f:
                 schema = yaml.safe_load(f) or {}
             result["schema"] = schema
         except (OSError, yaml.YAMLError):
             result["schema"] = _default_schema()
     else:
         result["schema"] = _default_schema()
-    # Consciousness (v4): thresholds, modes, tracability, principles
-    if CONSCIOUSNESS_FILE.exists():
+    if consciousness_file.exists():
         try:
-            with open(CONSCIOUSNESS_FILE, "r", encoding="utf-8") as f:
+            with open(consciousness_file, "r", encoding="utf-8") as f:
                 cons = yaml.safe_load(f) or {}
             result["consciousness"] = cons
         except (OSError, yaml.YAMLError):
@@ -158,261 +150,111 @@ def accept_user_proposal(branch_path: Path, proposal: dict) -> dict:
 
 
 def load_branch(slug):
-    """Load a single project's context within the machine's unique branch."""
-    branch_path = _branch_path()
-    identity_file = branch_path / "identity.yaml"
-    state_file = branch_path / "state.json"
-    identity = {}
-    state = {}
-    if identity_file.exists():
-        with open(identity_file, "r", encoding="utf-8") as f:
-            identity = yaml.safe_load(f) or {}
-    if state_file.exists():
-        try:
-            state = json.loads(state_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            state = {}
-    # Return project-specific state merged in
-    projects = state.get("projects", {})
-    project_state = projects.get(slug, {})
-    return identity, project_state, branch_path
+    """Load project's identity from its branch.json."""
+    target = shared.project_dir(slug)
+    branch_file = target / "branch.json"
+    if not branch_file.exists():
+        return {}, {}, target
+    try:
+        data = json.loads(branch_file.read_text(encoding="utf-8"))
+        return data, {}, target
+    except (json.JSONDecodeError, OSError):
+        return {}, {}, target
 
 
 def fork_branch(slug=None, force=False):
-    """Create/load the SINGLE branch for this machine.
+    """Initialize a project branch with identity forked from genome.
     
-    With the new model:
-    - There's ONE branch per machine (identified by machine-id hash)
-    - Projects are sub-contexts within that branch
-    - The branch holds consciousness, memory, knowledge, learnings for ALL projects
-    - slug is only used to track per-project state within the branch
+    Each project is its own branch/world. This function creates
+    the branch.json with the genome's identity and sets up subdirs.
     """
-    branch_path = _branch_path()
-    if branch_path.exists() and not force:
-        return _load_branch_state(branch_path)
-    
-    # Create default branch template if needed
-    default_path = _default_branch_path()
-    if not default_path.exists():
-        default_path.mkdir(parents=True, exist_ok=True)
-    
-    # Create branch dirs
-    branch_path.mkdir(parents=True, exist_ok=True)
-    _ensure_dirs(branch_path)
-    
-    # Copy identity from genome with fork metadata
-    genome = load_genome()
-    branch_id = dict(genome) if genome else {}
-    branch_id["forked_from"] = str(IDENTITY_FILE)
-    branch_id["forked_at"] = shared.ts()
-    branch_id["creator"] = genome.get("creator", "unknown")
-    branch_id["branch_hash"] = _branch_hash()
-    
-    dst_id = branch_path / "identity.yaml"
-    with open(dst_id, "w", encoding="utf-8") as f:
-        yaml.dump(branch_id, f, default_flow_style=False, allow_unicode=True)
-    
-    state = _fresh_state()
-    (branch_path / "state.json").write_text(
-        json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    
-    # If slug provided, initialize project entry
-    if slug:
-        state.setdefault("projects", {})[slug] = {
-            "created": shared.ts(),
-            "session_count": 0,
-            "last_session": None,
-        }
-        (branch_path / "state.json").write_text(
-            json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-    
-    return state, branch_path
-
-
-def _load_branch_state(branch_path):
-    state_file = branch_path / "state.json"
-    if state_file.exists():
+    if not slug:
+        return {}, shared.project_dir("_default")
+    target = shared.project_dir(slug)
+    branch_file = target / "branch.json"
+    if branch_file.exists() and not force:
         try:
-            state = json.loads(state_file.read_text(encoding="utf-8"))
+            data = json.loads(branch_file.read_text(encoding="utf-8"))
+            return data, target
         except (json.JSONDecodeError, OSError):
-            state = _fresh_state()
-    else:
-        state = _fresh_state()
-    return state, branch_path
-
-
-def _fresh_state():
-    return {
-        "version": "2.0.0",
-        "machine_id": _branch_hash(),
+            pass
+    
+    genome = load_genome()
+    branch_data = {
+        "slug": slug,
+        "genome_version": genome.get("schema", {}).get("schema_version", 4),
+        "forked_from_genome": str(_genome_dir() / "identity.yaml"),
         "created": shared.ts(),
-        "forked_from_genome": str(IDENTITY_FILE),
-        "branch_meta": {
-            "session_count": 0,
-            "last_session": None,
-            "plan_sessions": 0,
-            "build_sessions": 0,
-        },
-        "consciousness": {
-            "thresholds": {
-                "assume": 0.8,
-                "ask_little_floor": 0.5,
-                "ask_much_floor": 0.2,
-            },
-            "last_action": None,
-            "last_confidence": 0.0,
-        },
-        "projects": {},
-        "evolution": {
-            "current_version": 0,
-            "total_generations": 0,
-            "last_generative_cycle": None,
-        },
+        "creator": genome.get("creator", "unknown"),
+        "session_count": 0,
+        "last_session": None,
+        "consciousness": {"last_action": None, "last_confidence": 0.0},
+        "evolution": {"generation": 0, "last_cycle": None},
     }
-
-
-def _ensure_dirs(branch_path):
-    """Create all required subdirectories for the branch."""
-    dirs = [
-        branch_path / "consciousness",
-        branch_path / "memory" / "cross-project",
-        branch_path / "memory" / "projects",
-        branch_path / "knowledge" / "tomes",
-        branch_path / "knowledge" / "projects",
-        branch_path / "learnings" / "cross-project",
-        branch_path / "learnings" / "projects",
-        branch_path / "context",
-        branch_path / "evolved" / "commands",
-        branch_path / "evolved" / "mcp_tools",
-        branch_path / "evolved" / "context_providers",
-        branch_path / "evolved" / "conciencia_actions",
-        branch_path / "evolved" / "thresholds",
-        branch_path / "evolved" / "patches",
-        branch_path / "evolution" / "proposals",
-        branch_path / "projects",
-    ]
-    for d in dirs:
-        d.mkdir(parents=True, exist_ok=True)
+    branch_file.write_text(json.dumps(branch_data, indent=2), encoding="utf-8")
+    
+    for d in ("brain", "knowledge/tomes", "learnings", "evolution/proposals"):
+        (target / d).mkdir(parents=True, exist_ok=True)
+    
+    return branch_data, target
 
 
 def init_project(slug):
-    """Initialize a project entry within the single branch."""
-    state, branch_path = fork_branch()
-    projects = state.setdefault("projects", {})
-    if slug in projects:
-        return projects[slug]
-    projects[slug] = {
-        "created": shared.ts(),
-        "session_count": 0,
-        "last_session": None,
-        "mode_count": {"plan": 0, "build": 0},
-    }
-    # Ensure project subdirs exist
-    project_root = branch_path / "projects" / slug
-    (project_root / "memory").mkdir(parents=True, exist_ok=True)
-    (project_root / "knowledge").mkdir(parents=True, exist_ok=True)
-    (project_root / "learnings").mkdir(parents=True, exist_ok=True)
-    
-    (branch_path / "state.json").write_text(
-        json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    return projects[slug]
+    """Initialize a project entry."""
+    target = shared.project_dir(slug)
+    fork_branch(slug)
+    return {"slug": slug, "path": str(target), "created": shared.ts()}
 
 
 def list_branches():
-    """Return info about the single branch + its projects."""
-    branch_path = _branch_path()
-    if not branch_path.exists():
-        return []
-    
-    state_file = branch_path / "state.json"
-    state = {}
-    if state_file.exists():
-        try:
-            state = json.loads(state_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-    
-    identity_file = branch_path / "identity.yaml"
-    identity = {}
-    if identity_file.exists():
-        with open(identity_file, "r", encoding="utf-8") as f:
-            identity = yaml.safe_load(f) or {}
-    
-    projects = list(state.get("projects", {}).keys())
-    branch_info = {
-        "hash": _branch_hash(),
-        "path": str(branch_path),
-        "machine_id": state.get("machine_id", _branch_hash()),
-        "forked_from_genome": state.get("forked_from_genome", ""),
-        "created": state.get("created", ""),
-        "creator": identity.get("creator", "unknown"),
-        "projects": projects,
-        "session_count": state.get("branch_meta", {}).get("session_count", 0),
-        "evolution_version": state.get("evolution", {}).get("current_version", 0),
-        "total_generations": state.get("evolution", {}).get("total_generations", 0),
-    }
-    return [branch_info]
+    """Return info about all projects (each project is its own branch/world)."""
+    branches = []
+    if not shared.MEMORY_DIR.exists():
+        return branches
+    for d in sorted(shared.MEMORY_DIR.iterdir()):
+        if not d.is_dir():
+            continue
+        slug = d.name
+        branch_file = d / "branch.json"
+        data = {}
+        if branch_file.exists():
+            try:
+                data = json.loads(branch_file.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
+        branches.append({
+            "slug": slug,
+            "path": str(d),
+            "created": data.get("created", ""),
+            "creator": data.get("creator", "unknown"),
+            "genome_version": data.get("genome_version", "?"),
+            "session_count": data.get("session_count", 0),
+            "evolution_version": data.get("evolution", {}).get("generation", 0),
+        })
+    return branches
 
 
 def branch_status(slug=None):
-    """Return full status of the single branch, optionally filtered by project."""
-    branch_path = _branch_path()
-    if not branch_path.exists():
+    """Return status of one or all projects."""
+    if not slug:
+        return list_branches()
+    target = shared.project_dir(slug)
+    branch_file = target / "branch.json"
+    if not branch_file.exists():
         return None
-    
-    identity_file = branch_path / "identity.yaml"
-    identity = {}
-    if identity_file.exists():
-        with open(identity_file, "r", encoding="utf-8") as f:
-            identity = yaml.safe_load(f) or {}
-    
-    state_file = branch_path / "state.json"
-    state = {}
-    if state_file.exists():
-        try:
-            state = json.loads(state_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-    
-    result = {
-        "hash": _branch_hash(),
-        "path": str(branch_path),
-        "identity": identity,
-        "state": state,
-        "projects": list(state.get("projects", {}).keys()),
-    }
-    
-    if slug:
-        project_data = state.get("projects", {}).get(slug, {})
-        result["project"] = {"slug": slug, **project_data}
-    
-    return result
+    try:
+        data = json.loads(branch_file.read_text(encoding="utf-8"))
+        data["path"] = str(target)
+        return data
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def branch_diff():
-    """Show differences between genome identity and branch identity."""
+    """Compare current genome with a project's branch.json."""
     genome = load_genome()
-    branch_path = _branch_path()
-    identity_file = branch_path / "identity.yaml"
-    branch_id = {}
-    if identity_file.exists():
-        with open(identity_file, "r", encoding="utf-8") as f:
-            branch_id = yaml.safe_load(f) or {}
-    
-    diffs = []
-    g_id = genome.get("identity", {})
-    b_id = branch_id.get("identity", {}) if isinstance(branch_id, dict) else {}
-    for key in g_id:
-        if g_id.get(key) != b_id.get(key):
-            diffs.append({"key": key, "genome": g_id.get(key), "branch": b_id.get(key)})
-    return diffs
+    return {"genome_version": genome.get("schema", {}).get("schema_version", 4)}
 
-
-# ── Legacy backward compat aliases ─────────────────────────────
 
 def _slug_hash(slug):
-    """Legacy: hash a slug (kept for backward compat)."""
     return hashlib.sha256(slug.encode("utf-8")).hexdigest()[:16]

@@ -20,9 +20,7 @@ def consolidate(slug):
         return {"ok": False, "error": f"Proyecto '{slug}' no encontrado"}
 
     results = {}
-    mem_dir = shared.branch_path_for(slug, "memory")
-    if not mem_dir.exists():
-        mem_dir = shared.MEMORY_DIR / slug / "memory"  # legacy fallback
+    mem_dir = shared.MEMORY_DIR / slug / "memory"
     if mem_dir.exists():
         before = len(list(mem_dir.glob("*.json")))
         mem_script = Path(__file__).with_name("guardian_memory.py")
@@ -41,9 +39,7 @@ def consolidate(slug):
     results["rag_reindex"] = {"rc": proc.returncode}
 
     learnings = []
-    learnings_dir = shared.branch_path_for(slug, "learnings")
-    if not learnings_dir.exists():
-        learnings_dir = shared.MEMORY_DIR / slug / "learnings"  # legacy
+    learnings_dir = shared.MEMORY_DIR / slug / "learnings"
     if learnings_dir.exists():
         before_l = len(list(learnings_dir.glob("*.json")))
         existing = sorted(learnings_dir.glob("*.json"))

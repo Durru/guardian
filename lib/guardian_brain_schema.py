@@ -35,14 +35,9 @@ ALL_LEVELS = PROJECT_LEVELS + GLOBAL_LEVELS
 # ── Path helpers ───────────────────────────────────────────────────────
 
 
-def _branch_root():
-    """Root of the current machine's branch (where projects live)."""
-    return shared.BACKEND_DIR / "genome" / "branches" / shared._branch_hash()
-
-
 def brain_dir(slug):
-    """Per-project brain directory."""
-    return _branch_root() / "projects" / slug / "brain"
+    """Per-project brain directory: projects/<slug>/brain/"""
+    return shared.project_dir(slug) / "brain"
 
 
 def global_brain_dir():

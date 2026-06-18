@@ -15,46 +15,18 @@ _GUARDIAN_DATA = os.environ.get("GUARDIAN_DATA", "")
 if _GUARDIAN_DATA:
     MEMORY_DIR = Path(_GUARDIAN_DATA) / "projects"
     BACKEND_DIR = Path(_GUARDIAN_DATA)
-    USERS_DIR = Path(_GUARDIAN_DATA) / "users"
 else:
     MEMORY_DIR = Path("/var/guardian/projects")
     BACKEND_DIR = Path("/var/guardian")
-    USERS_DIR = Path("/var/guardian") / "users"
 DEFAULT_MODE = "plan"
 
 
-# ── v4: user branch (rama única por usuario) ───────────────────
-
-def user_branch_path() -> Path:
-    """The user's unique branch. One per machine/user.
-
-    Layout: $GUARDIAN_DATA/users/<machine-id>/...
-    Derives from BACKEND_DIR so test overrides propagate.
-    """
-    machine_id = _get_machine_id()
-    branch = BACKEND_DIR / "users" / machine_id
-    branch.mkdir(parents=True, exist_ok=True)
-    (branch / "evolution").mkdir(exist_ok=True)
-    return branch
-
-
-def project_root_path(slug: str) -> Path:
-    """The root for a specific project. Lives inside the user's branch."""
-    branch = user_branch_path()
-    root = branch / "projects" / slug / "root"
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "brain").mkdir(exist_ok=True)
-    return root
-
-
-def _v4_project_root(slug: str) -> Path:
-    """v4 root path (no side effects)."""
-    return user_branch_path() / "projects" / slug / "root"
-
-
-def _v3_path(slug: str, *parts: str) -> Path:
-    """v3 path under MEMORY_DIR/projects/<slug>/..."""
-    return MEMORY_DIR / slug / "/".join(parts)
+def project_dir(slug: str) -> Path:
+    """Root directory for a project. Everything about the project lives here."""
+    d = MEMORY_DIR / slug
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "brain").mkdir(exist_ok=True)
+    return d
 
 GUARDIAN_LANG = os.environ.get("GUARDIAN_LANG", "en")
 
@@ -1153,40 +1125,7 @@ def hash_dict(data: dict) -> str:
     return hashlib.sha256(serialized.encode()).hexdigest()
 
 
-# ── Branch / machine identity ──────────────────────────────────
-
-def _get_machine_id() -> str:
-    """Return a stable machine identifier for the single-branch model."""
-    env_id = os.environ.get("GUARDIAN_MACHINE_ID", "").strip()
-    if env_id:
-        return env_id
-    for p in (Path("/etc/machine-id"), Path("/var/lib/dbus/machine-id")):
-        if p.exists():
-            return p.read_text(encoding="utf-8", errors="replace").strip()[:32]
-    return hashlib.sha256(os.uname().nodename.encode()).hexdigest()[:32]
-
-
-_BRANCH_HASH_CACHE = None
-
-def _branch_hash() -> str:
-    global _BRANCH_HASH_CACHE
-    if _BRANCH_HASH_CACHE is None:
-        _BRANCH_HASH_CACHE = hashlib.sha256(_get_machine_id().encode("utf-8")).hexdigest()[:16]
-    return _BRANCH_HASH_CACHE
-
-
-def get_branch_dir() -> Path:
-    """Return the single branch directory path for this machine."""
-    return BACKEND_DIR / "genome" / "branches" / _branch_hash()
-
-
-def branch_path_for(slug: str, *parts: str) -> Path:
-    """Path within the branch for a project sub-resource.
-    Example: branch_path_for('myapp', 'consciousness', 'cycles.json')
-    → /var/guardian/genome/branches/<hash>/projects/myapp/consciousness/cycles.json
-    """
-    return get_branch_dir() / "projects" / slug / "/".join(parts)
-
+# ── Staleness check ────────────────────────────────────
 
 def is_stale(last_ts: str | None, max_age_days: int = 7) -> bool:
     if not last_ts:
@@ -1200,44 +1139,25 @@ def is_stale(last_ts: str | None, max_age_days: int = 7) -> bool:
 
 
 def project_exists(slug: str) -> bool:
-    """Check if project exists in legacy location or within the branch."""
-    if (MEMORY_DIR / slug / "config.yaml").exists():
-        return True
-    branch_cfg = get_branch_dir() / "projects" / slug / "config.yaml"
-    return branch_cfg.exists()
+    return (MEMORY_DIR / slug / "config.yaml").exists()
 
 
 def discover_projects():
-    """Discover all projects from legacy location and the branch."""
-    projects = set()
-    if MEMORY_DIR.exists():
-        for d in MEMORY_DIR.iterdir():
-            if d.is_dir() and (d / "config.yaml").exists():
-                projects.add(d.name)
-    branch_projects = get_branch_dir() / "projects"
-    if branch_projects.exists():
-        for d in branch_projects.iterdir():
-            if d.is_dir() and (d / "config.yaml").exists():
-                projects.add(d.name)
-    return sorted(projects)
+    if not MEMORY_DIR.exists():
+        return []
+    return sorted(d.name for d in MEMORY_DIR.iterdir()
+                  if d.is_dir() and (d / "config.yaml").exists())
 
 
 def read_config(slug: str):
-    v4 = _v4_project_root(slug) / "config.yaml"
-    if v4.exists():
-        try:
-            data = yaml.safe_load(v4.read_text(encoding="utf-8", errors="replace"))
-            return _stringify_datetimes(data) if isinstance(data, dict) else {}
-        except yaml.YAMLError:
-            return {}
-    v3 = _v3_path(slug, "config.yaml")
-    if v3.exists():
-        try:
-            data = yaml.safe_load(v3.read_text(encoding="utf-8", errors="replace"))
-            return _stringify_datetimes(data) if isinstance(data, dict) else {}
-        except yaml.YAMLError:
-            return {}
-    return {}
+    p = project_dir(slug) / "config.yaml"
+    if not p.exists():
+        return {}
+    try:
+        data = yaml.safe_load(p.read_text(encoding="utf-8", errors="replace"))
+        return _stringify_datetimes(data) if isinstance(data, dict) else {}
+    except yaml.YAMLError:
+        return {}
 
 
 def _stringify_datetimes(value):
@@ -1253,14 +1173,9 @@ def _stringify_datetimes(value):
 
 
 def write_config(slug: str, config: dict):
+    p = project_dir(slug) / "config.yaml"
     data = _stringify_datetimes(config)
-    v4 = _v4_project_root(slug) / "config.yaml"
-    v4.parent.mkdir(parents=True, exist_ok=True)
-    v4.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    v3 = _v3_path(slug, "config.yaml")
-    if v3.parent.exists():
-        v3.parent.mkdir(parents=True, exist_ok=True)
-        v3.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    p.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
 
 def read_json(path: Path, default=None):
@@ -1271,46 +1186,27 @@ def read_json(path: Path, default=None):
 
 
 def read_audit(slug: str):
-    v4 = _v4_project_root(slug) / "audit.json"
-    data = read_json(v4, None)
-    if data is not None:
-        return data if isinstance(data, list) else []
-    v3 = _v3_path(slug, "audit.json")
-    return read_json(v3, [])
+    data = read_json(project_dir(slug) / "audit.json", None)
+    return data if isinstance(data, list) else []
 
 
 def write_audit(slug: str, entries):
-    v4 = _v4_project_root(slug) / "audit.json"
-    v4.parent.mkdir(parents=True, exist_ok=True)
-    v4.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
-    v3 = _v3_path(slug, "audit.json")
-    if v3.parent.exists():
-        v3.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
+    p = project_dir(slug) / "audit.json"
+    p.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def read_skills_json(slug: str):
-    v4 = _v4_project_root(slug) / "skills.json"
-    data = read_json(v4, None)
-    if data is not None:
-        return data
-    v3 = _v3_path(slug, "skills.json")
-    return read_json(v3, {"relevant": [], "scores": {}, "hot": [], "last_match": None})
+    data = read_json(project_dir(slug) / "skills.json", None)
+    return data if data else {"relevant": [], "scores": {}, "hot": [], "last_match": None}
 
 
 def write_skills_json(slug: str, data: dict):
-    v4 = _v4_project_root(slug) / "skills.json"
-    v4.parent.mkdir(parents=True, exist_ok=True)
-    v4.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    v3 = _v3_path(slug, "skills.json")
-    if v3.parent.exists():
-        v3.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    p = project_dir(slug) / "skills.json"
+    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def read_mode_state(slug: str):
-    v4 = _v4_project_root(slug) / "mode-state.json"
-    data = read_json(v4, None)
-    if data is None:
-        data = read_json(_v3_path(slug, "mode-state.json"), None)
+    data = read_json(project_dir(slug) / "mode-state.json", None)
     if not isinstance(data, dict):
         data = {}
     data.setdefault("mode", DEFAULT_MODE)
@@ -1322,16 +1218,12 @@ def read_mode_state(slug: str):
 
 
 def write_mode_state(slug: str, data: dict):
-    v4 = _v4_project_root(slug) / "mode-state.json"
-    v4.parent.mkdir(parents=True, exist_ok=True)
+    p = project_dir(slug) / "mode-state.json"
     payload = dict(data)
     payload.setdefault("mode", DEFAULT_MODE)
     payload.setdefault("updated", ts())
     payload.setdefault("history", [])
-    v4.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    v3 = _v3_path(slug, "mode-state.json")
-    if v3.parent.exists():
-        v3.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    p.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def append_mode_history(slug: str, mode: str, reason: str = ""):
@@ -1347,10 +1239,7 @@ def append_mode_history(slug: str, mode: str, reason: str = ""):
 
 
 def read_knowledge_index(slug: str):
-    v4 = _v4_project_root(slug) / "knowledge" / "index.json"
-    data = read_json(v4, None)
-    if data is None:
-        data = read_json(_v3_path(slug, "knowledge", "index.json"), None)
+    data = read_json(project_dir(slug) / "knowledge" / "index.json", None)
     if not isinstance(data, dict):
         data = {}
     data.setdefault("tomes", [])
@@ -1359,20 +1248,13 @@ def read_knowledge_index(slug: str):
 
 
 def write_knowledge_index(slug: str, data: dict):
-    v4 = _v4_project_root(slug) / "knowledge" / "index.json"
-    v4.parent.mkdir(parents=True, exist_ok=True)
-    v4.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    v3 = _v3_path(slug, "knowledge", "index.json")
-    if v3.parent.exists():
-        v3.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    p = project_dir(slug) / "knowledge" / "index.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def read_memory(slug: str):
-    v4 = _v4_project_root(slug) / "brain" / "memory.jsonl"
-    if v4.exists() and v4.stat().st_size > 0:
-        mf = v4
-    else:
-        mf = MEMORY_DIR / slug / "memory.jsonl"
+    mf = project_dir(slug) / "brain" / "memory.jsonl"
     if not mf.exists() or mf.stat().st_size == 0:
         return []
     entries = []

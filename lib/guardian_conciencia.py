@@ -322,85 +322,58 @@ class Conciencia:
         }
 
 
-# ── v4 state/thresholds with v3 fallback ──
+# ── State / thresholds ──
 
 
-def _v4_brain_path(slug: str, *parts: str) -> Path:
-    return shared._v4_project_root(slug) / "brain" / "/".join(parts)
+def _brain_path(slug: str, *parts: str) -> Path:
+    import guardian_brain_schema as schema
+    return schema.brain_dir(slug) / "/".join(parts)
 
 
-def _v3_path(slug: str, *parts: str) -> Path:
-    return shared.MEMORY_DIR / slug / "/".join(parts)
+DEFAULT_STATE = {"cycles": [], "last_action": None, "last_confidence": 0.0}
+DEFAULT_THRESHOLDS = {"assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2}
 
 
 def read_state(slug):
-    v4 = _v4_brain_path(slug, "conciencia-state.json")
-    if v4.exists():
-        try:
-            return json.loads(v4.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-    v3 = _v3_path(slug, "conciencia-state.json")
-    if v3.exists():
-        try:
-            return json.loads(v3.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {"cycles": [], "last_action": None, "last_confidence": 0.0}
+    p = _brain_path(slug, "conciencia-state.json")
+    if not p.exists():
+        return dict(DEFAULT_STATE)
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return dict(DEFAULT_STATE)
 
 
 def write_state(slug, data):
-    v4 = _v4_brain_path(slug, "conciencia-state.json")
-    v4.parent.mkdir(parents=True, exist_ok=True)
-    v4.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    v3 = _v3_path(slug, "conciencia-state.json")
-    if v3.parent.exists():
-        v3.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    p = _brain_path(slug, "conciencia-state.json")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def read_thresholds(slug):
-    v4 = _v4_brain_path(slug, "conciencia-thresholds.json")
-    if v4.exists():
-        try:
-            return json.loads(v4.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-    v3 = _v3_path(slug, "conciencia-thresholds.json")
-    if v3.exists():
-        try:
-            return json.loads(v3.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {"assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2}
+    p = _brain_path(slug, "conciencia-thresholds.json")
+    if not p.exists():
+        return dict(DEFAULT_THRESHOLDS)
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return dict(DEFAULT_THRESHOLDS)
 
 
 def write_thresholds(slug, data):
-    v4 = _v4_brain_path(slug, "conciencia-thresholds.json")
-    v4.parent.mkdir(parents=True, exist_ok=True)
-    v4.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    v3 = _v3_path(slug, "conciencia-thresholds.json")
-    if v3.parent.exists():
-        v3.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    p = _brain_path(slug, "conciencia-thresholds.json")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def save_learning(slug, entry):
-    """Save a learning entry. Backward compat: writes to both legacy and v4 paths."""
-    # Legacy v2 path
-    p = Path(shared.MEMORY_DIR) / slug / "learnings.jsonl"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    # v4 path: user branch learnings
-    try:
-        branch_path = shared.user_branch_path()
-        learn_dir = branch_path / "projects" / slug / "learnings"
-        learn_dir.mkdir(parents=True, exist_ok=True)
-        ts = int(time.time() * 1000)
-        learn_file = learn_dir / f"{ts}.json"
-        learn_file.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
-    return {"ok": True, "path": str(p)}
+    """Save a learning entry to projects/<slug>/learnings/"""
+    learn_dir = shared.project_dir(slug) / "learnings"
+    learn_dir.mkdir(parents=True, exist_ok=True)
+    ts = int(time.time() * 1000)
+    learn_file = learn_dir / f"{ts}.json"
+    learn_file.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "path": str(learn_file)}
 
 
 def score_context(payload):
