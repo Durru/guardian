@@ -555,6 +555,85 @@ TOOLS = [
             "required": ["slug"],
         },
     },
+    {
+        "name": "brain_spike",
+        "description": "v4.6: Spike de potencial de activación en un nodo",
+        "inputSchema": {
+            "type": "object", "properties": {
+                "slug": {"type": "string"},
+                "level": {"type": "string", "enum": ["semantic", "episodic", "procedural", "reflection"]},
+                "node_id": {"type": "string"},
+                "amount": {"type": "number", "default": 0.1},
+            }, "required": ["slug", "level", "node_id"],
+        },
+    },
+    {
+        "name": "brain_decay",
+        "description": "v4.6: Decaer potenciales de activación en un nivel",
+        "inputSchema": {
+            "type": "object", "properties": {
+                "slug": {"type": "string"},
+                "level": {"type": "string", "enum": ["semantic", "episodic", "procedural", "reflection"]},
+                "factor": {"type": "number", "default": 0.99},
+            }, "required": ["slug", "level"],
+        },
+    },
+    {
+        "name": "brain_gc_potential",
+        "description": "v4.6: Podar nodos con potencial de activación bajo",
+        "inputSchema": {
+            "type": "object", "properties": {
+                "slug": {"type": "string"},
+                "level": {"type": "string", "enum": ["semantic", "episodic", "procedural", "reflection"]},
+                "threshold": {"type": "number", "default": 0.15},
+                "dry_run": {"type": "boolean", "default": True},
+            }, "required": ["slug", "level"],
+        },
+    },
+    {
+        "name": "brain_hebbian",
+        "description": "v4.6: Reforzar enlace Hebbiano entre dos nodos",
+        "inputSchema": {
+            "type": "object", "properties": {
+                "slug": {"type": "string"},
+                "level": {"type": "string", "enum": ["semantic", "episodic", "procedural", "reflection"]},
+                "node_a": {"type": "string"},
+                "node_b": {"type": "string"},
+            }, "required": ["slug", "level", "node_a", "node_b"],
+        },
+    },
+    {
+        "name": "brain_learn",
+        "description": "v4.6: Governor adaptativo — aprende de feedback del usuario",
+        "inputSchema": {
+            "type": "object", "properties": {
+                "slug": {"type": "string"},
+                "feedback": {"type": "string",
+                    "enum": ["merge_was_wrong", "discard_was_wrong", "contradiction_was_false",
+                             "merge_should_happen", "discard_should_happen", "contradiction_was_correct"]},
+            }, "required": ["slug", "feedback"],
+        },
+    },
+    {
+        "name": "record_feedback",
+        "description": "v4.6: Entrenar clasificador neuronal con ejemplo del usuario",
+        "inputSchema": {
+            "type": "object", "properties": {
+                "slug": {"type": "string"},
+                "prompt": {"type": "string"},
+                "correct_topic": {"type": "string"},
+            }, "required": ["slug", "prompt", "correct_topic"],
+        },
+    },
+    {
+        "name": "classifier_stats",
+        "description": "v4.6: Métricas de acierto del clasificador neuronal",
+        "inputSchema": {
+            "type": "object", "properties": {
+                "slug": {"type": "string"},
+            }, "required": ["slug"],
+        },
+    },
 ]
 
 
@@ -1102,6 +1181,70 @@ def _handle_call(tool_name, args, id_val):
             return
         result = guardian_brain.compact_guardian_md(slug)
         _respond(id_val, result)
+
+    elif tool_name == "brain_spike":
+        slug, level = args.get("slug", ""), args.get("level", "")
+        node_id = args.get("node_id", "")
+        amount = float(args.get("amount", 0.1))
+        if not slug or not level or not node_id:
+            _respond(id_val, error={"code": -32602, "message": "slug, level, node_id required"})
+            return
+        result = guardian_brain.spike_node(slug, level, node_id, amount)
+        _respond(id_val, result)
+
+    elif tool_name == "brain_decay":
+        slug, level = args.get("slug", ""), args.get("level", "")
+        factor = float(args.get("factor", 0.99))
+        if not slug or not level:
+            _respond(id_val, error={"code": -32602, "message": "slug and level required"})
+            return
+        result = guardian_brain.decay_potentials(slug, level, factor)
+        _respond(id_val, result)
+
+    elif tool_name == "brain_gc_potential":
+        slug, level = args.get("slug", ""), args.get("level", "")
+        threshold = float(args.get("threshold", 0.15))
+        dry_run = bool(args.get("dry_run", True))
+        if not slug or not level:
+            _respond(id_val, error={"code": -32602, "message": "slug and level required"})
+            return
+        result = guardian_brain.gc_by_potential(slug, level, threshold, dry_run)
+        _respond(id_val, result)
+
+    elif tool_name == "brain_hebbian":
+        slug, level = args.get("slug", ""), args.get("level", "")
+        node_a, node_b = args.get("node_a", ""), args.get("node_b", "")
+        if not slug or not level or not node_a or not node_b:
+            _respond(id_val, error={"code": -32602, "message": "slug, level, node_a, node_b required"})
+            return
+        result = guardian_brain.hebbian_link(slug, level, node_a, node_b)
+        _respond(id_val, result)
+
+    elif tool_name == "brain_learn":
+        slug, feedback = args.get("slug", ""), args.get("feedback", "")
+        if not slug or not feedback:
+            _respond(id_val, error={"code": -32602, "message": "slug and feedback required"})
+            return
+        result = guardian_brain.governor_learn(slug, feedback)
+        _respond(id_val, result)
+
+    elif tool_name == "record_feedback":
+        slug = args.get("slug", "")
+        prompt = args.get("prompt", "")
+        correct_topic = args.get("correct_topic", "")
+        if not slug or not prompt or not correct_topic:
+            _respond(id_val, error={"code": -32602, "message": "slug, prompt, correct_topic required"})
+            return
+        guardian_observer.record_feedback(slug, prompt, correct_topic)
+        _respond(id_val, {"ok": True, "slug": slug, "topic": correct_topic})
+
+    elif tool_name == "classifier_stats":
+        slug = args.get("slug", "")
+        if not slug:
+            _respond(id_val, error={"code": -32602, "message": "slug required"})
+            return
+        stats = guardian_observer.classifier_stats(slug)
+        _respond(id_val, {"slug": slug, "stats": stats})
 
     elif tool_name == "observer_log_prompt":
         slug = args.get("slug", "")

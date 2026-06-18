@@ -692,6 +692,64 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             dry_run = bool(body.get("dry_run", False))
             return _json_response(self, 200, guardian_brain.auto_compact(slug, dry_run=dry_run))
 
+        # ── v4.6 neural POST endpoints ──
+        if parsed.path == "/brain/neural":
+            slug = _project_slug(params, body)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            st = guardian_brain.status(slug)
+            th = guardian_brain._get_governor_thresholds(slug)
+            try:
+                import guardian_observer
+                cstats = guardian_observer.classifier_stats(slug)
+            except Exception:
+                cstats = {}
+            return _json_response(self, 200, {"slug": slug, "status": st, "thresholds": th, "classifier": cstats})
+
+        if parsed.path == "/brain/learn":
+            slug = _project_slug(params, body)
+            feedback = str(body.get("feedback", ""))
+            if not slug or not feedback:
+                return _json_response(self, 400, {"error": "slug and feedback required"})
+            return _json_response(self, 200, guardian_brain.governor_learn(slug, feedback))
+
+        if parsed.path == "/brain/spike":
+            slug = _project_slug(params, body)
+            level = str(body.get("level", "semantic"))
+            node_id = str(body.get("node_id", ""))
+            amount = float(body.get("amount", 0.1))
+            if not slug or not node_id:
+                return _json_response(self, 400, {"error": "slug and node_id required"})
+            return _json_response(self, 200, guardian_brain.spike_node(slug, level, node_id, amount))
+
+        if parsed.path == "/brain/decay":
+            slug = _project_slug(params, body)
+            level = str(body.get("level", "semantic"))
+            factor = float(body.get("factor", 0.99))
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, guardian_brain.decay_potentials(slug, level, factor))
+
+        if parsed.path == "/brain/gc-potential":
+            slug = _project_slug(params, body)
+            level = str(body.get("level", "semantic"))
+            threshold = float(body.get("threshold", 0.15))
+            dry_run = bool(body.get("dry_run", True))
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            return _json_response(self, 200, guardian_brain.gc_by_potential(slug, level, threshold, dry_run))
+
+        if parsed.path == "/classifier/stats":
+            slug = _project_slug(params)
+            if not slug:
+                return _json_response(self, 400, {"error": "slug required"})
+            try:
+                import guardian_observer
+                stats = guardian_observer.classifier_stats(slug)
+            except Exception:
+                stats = {}
+            return _json_response(self, 200, {"slug": slug, "stats": stats})
+
         # ── session POST ──
         if parsed.path == "/session/start":
             slug = _project_slug(params, body)

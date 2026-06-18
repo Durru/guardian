@@ -781,11 +781,11 @@ USAGE = """Guardian Brain — usage:
   gc <slug> <level> [--dry-run]        run governor GC
   embed <text>                         show embedding dimension
   cosine <text-a> <text-b>             show cosine similarity
-  learn <slug> <feedback>              governor_learn (merge_was_wrong, discard_was_wrong, etc.)
+  learn <slug> <feedback>              governor_learn (6 feedback types)
   spike <slug> <level> <id> [amount]   spike activation potential
   decay <slug> <level> [factor]        decay all potentials
   gc-potential <slug> <level> [threshold]  prune below-threshold nodes
-  hebbian <slug> <level> <a> <b>       reinforce link between two nodes
+  hebbian <slug> <level> <a> <b>       reinforce Hebbian link
 """
 
 
