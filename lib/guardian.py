@@ -3340,7 +3340,7 @@ def cmd_compact_memory(args):
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h", "--ayuda"):
-        print("🛡️  Nexxoria Guardian v4.5.0")
+        print("🛡️  Nexxoria Guardian v4.5.1")
         print()
         print("Usage: guardian <command> [args...]")
         print()
@@ -3431,7 +3431,7 @@ def main():
         return 0
 
     if sys.argv[1] in ("--version", "-v"):
-        print("Nexxoria Guardian v4.5.0")
+        print("Nexxoria Guardian v4.5.1")
         return 0
 
     args = sys.argv[1:]

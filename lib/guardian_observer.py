@@ -113,8 +113,12 @@ TOPIC_PATTERNS = [
 ]
 
 
-def extract_topic_key(prompt: str) -> str:
-    """Extrae topic_key del prompt usando heurística de keywords."""
+def extract_topic_key(prompt: str, slug: str = None) -> str:
+    """Extrae topic_key del prompt. Usa kNN neural si hay data, fallback heurística."""
+    if slug:
+        neural = classify_topic_neural(prompt, slug)
+        if neural:
+            return neural
     p = prompt.lower()
     scores = []
     for keywords, topic in TOPIC_PATTERNS:
@@ -134,46 +138,43 @@ def extract_topic_key(prompt: str) -> str:
     return scores[0][1]
 
 
-def classify_importance(prompt: str, event_type: str = "chat.message") -> float:
-    """Clasifica importancia de un evento (0.0 - 1.0).
-
-    Factores:
-    - Longitud: mensajes más largos => más importante
-    - Keywords de alta importancia (migración, deploy, security, etc.)
-    - Tipo de evento (tool.execute.after => depende del tool)
-    """
+def _heuristic_importance(prompt: str, event_type: str = "chat.message") -> float:
+    """Heurística de importancia (base, sin neural)."""
     score = 0.3
-
     if event_type == "tool.execute.after":
         return 0.6
-
     if event_type == "chat.message":
         length = len(prompt.strip())
         if length > 200:
             score += 0.2
         elif length > 80:
             score += 0.1
-
         p = prompt.lower()
         high_impact = ["migr", "deploy", "security", "arquitectur", "refactor",
                        "reestructur", "cambi", "change", "architecture"]
         medium_impact = ["agreg", "crear", "fix", "error", "bug", "test", "config",
                          "implement", "añad", "feature", "nuev"]
-
         for kw in high_impact:
             if kw in p:
                 score += 0.15
                 break
-
         for kw in medium_impact:
             if kw in p:
                 score += 0.08
                 break
-
         if extract_topic_key(prompt):
             score += 0.05
-
     return min(1.0, max(0.0, score))
+
+
+def classify_importance(prompt: str, event_type: str = "chat.message", slug: str = None) -> float:
+    """Clasifica importancia de un evento (0.0 - 1.0).
+
+    Usa kNN neural si hay datos, fallback heurística.
+    """
+    if slug:
+        return classify_importance_neural(prompt, event_type, slug)
+    return _heuristic_importance(prompt, event_type)
 
 
 # ── Storage helpers ───────────────────────────────────────────────
@@ -396,3 +397,109 @@ def get_observer(slug: str) -> Observer:
 def _test_sanitize():
     """Test entrypoint: returns the sanitizer without side effects."""
     return sanitize
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Neural Classifier — kNN sobre embeddings (Opción B)
+# ═══════════════════════════════════════════════════════════════════
+
+_KNN_CACHE = {"topics": [], "topic_labels": [], "examples": []}
+
+
+def _ensure_knn_data(slug: str = None):
+    """Load known topics + examples from brain. Lazy, cached."""
+    if _KNN_CACHE["topic_labels"] and slug is None:
+        return
+    if not slug:
+        return
+    try:
+        import guardian_brain as brain
+        nodes = brain.list_nodes(slug, "semantic", filters={"min_importance": 0.4},
+                                  limit=200, include_embedding=True)
+        topics = {}
+        for n in nodes:
+            tk = n.get("topic_key") or ""
+            if tk and tk != "general":
+                emb = n.get("embedding")
+                if emb:
+                    topics.setdefault(tk, []).append(emb)
+        _KNN_CACHE["topics"] = list(topics.keys())
+        _KNN_CACHE["topic_labels"] = _KNN_CACHE["topics"]
+        _KNN_CACHE["examples"] = topics
+    except Exception:
+        pass
+
+
+def classify_topic_neural(prompt: str, slug: str = None) -> str:
+    """Classify prompt topic using kNN over brain embeddings.
+
+    Falls back to heuristic extract_topic_key() if not enough data.
+    """
+    _ensure_knn_data(slug)
+    if not _KNN_CACHE["topic_labels"] or len(_KNN_CACHE["examples"]) < 3:
+        return extract_topic_key(prompt)
+
+    try:
+        import guardian_brain as brain
+        q_emb = brain.embed(prompt)
+
+        best_topic = ""
+        best_sim = 0.1
+        for topic, embs in _KNN_CACHE["examples"].items():
+            sims = brain.cosine_bulk(q_emb, embs)
+            if sims:
+                avg = sum(sims) / len(sims)
+                if avg > best_sim:
+                    best_sim = avg
+                    best_topic = topic
+
+        if best_topic:
+            return best_topic
+    except Exception:
+        pass
+    return extract_topic_key(prompt)
+
+
+def classify_importance_neural(prompt: str, event_type: str = "chat.message",
+                                slug: str = None) -> float:
+    """Classify importance using embedding similarity + heuristics.
+
+    Uses the most similar known node's importance as a base, then adjusts.
+    """
+    base = _heuristic_importance(prompt, event_type)
+
+    try:
+        import guardian_brain as brain
+        q_emb = brain.embed(prompt)
+        sim_nodes = brain.query(slug, "semantic", prompt, top_k=3, min_similarity=0.3) if slug else []
+
+        if sim_nodes:
+            sim_imps = [n.get("importance", 0.5) for n in sim_nodes]
+            avg_sim = sum(n.get("similarity", 0) for n in sim_nodes) / len(sim_nodes)
+            avg_imp = sum(sim_imps) / len(sim_imps)
+            blend = avg_sim * avg_imp + (1 - avg_sim) * base
+            return min(1.0, max(0.0, blend))
+    except Exception:
+        pass
+    return base
+
+
+def record_feedback(slug: str, prompt: str, correct_topic: str, correct_importance: float = None):
+    """Record user feedback so the neural classifier can learn.
+
+    Stores as a new observation in the brain so next kNN query benefits.
+    """
+    try:
+        import guardian_brain as brain
+        brain.write_observation(
+            slug=slug,
+            obs_type="classification_example",
+            topic_key=correct_topic,
+            content=prompt[:200],
+            why="user_feedback",
+            outcome="info",
+            scope="project",
+            tags=["knn_training"],
+        )
+    except Exception:
+        pass

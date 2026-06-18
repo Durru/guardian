@@ -51,30 +51,29 @@ def _tokenize(text: str) -> list[str]:
     return re.findall(r'[a-záéíóúñü0-9]+', text.lower())
 
 
-_EMBED_BACKEND = os.environ.get("GUARDIAN_EMBED_BACKEND", "hashing").lower()
+_EMBED_BACKEND = os.environ.get("GUARDIAN_EMBED_BACKEND", "auto").lower()
+_EMBED_CACHE = {}
 _SENTENCE_TRANSFORMER = None
 
 
-def _embed_external(text: str) -> bytes | None:
-    """Optional sentence-transformers backend. Returns None if unavailable.
-
-    Set GUARDIAN_EMBED_BACKEND=sentence-transformer to enable. Requires
-    `pip install sentence-transformers` (NOT a zero-dep dependency, opt-in only).
-    Returns embeddings of EMBED_DIM if possible, else None (fall back to hashing).
-    """
+def _init_transformer():
+    """Lazy-init sentence-transformers. Safe to call repeatedly."""
     global _SENTENCE_TRANSFORMER
-    if _EMBED_BACKEND != "sentence-transformer":
+    if _SENTENCE_TRANSFORMER is not None:
+        return True
+    try:
+        from sentence_transformers import SentenceTransformer
+        model_name = os.environ.get("GUARDIAN_EMBED_MODEL", "all-MiniLM-L6-v2")
+        _SENTENCE_TRANSFORMER = SentenceTransformer(model_name)
+        return True
+    except Exception:
+        return False
+
+
+def _embed_st(text: str) -> bytes | None:
+    """Sentence-transformer embedding. Returns BLOB or None."""
+    if not _init_transformer():
         return None
-    if _SENTENCE_TRANSFORMER is None:
-        try:
-            from sentence_transformers import SentenceTransformer
-            import os as _os
-            model_name = _os.environ.get("GUARDIAN_EMBED_MODEL", "all-MiniLM-L6-v2")
-            _SENTENCE_TRANSFORMER = SentenceTransformer(model_name)
-        except ImportError:
-            return None
-        except Exception:
-            return None
     try:
         vec = _SENTENCE_TRANSFORMER.encode(text, normalize_embeddings=True)
         if len(vec) != EMBED_DIM:
@@ -87,17 +86,47 @@ def _embed_external(text: str) -> bytes | None:
         return None
 
 
+def _embed_hashing(text: str) -> bytes:
+    """Zero-deps hashing embedding. Always available."""
+    tokens = _tokenize(text)
+    vec = [0.0] * EMBED_DIM
+    for tok in tokens:
+        h = int(hashlib.md5(tok.encode()).hexdigest()[:8], 16)
+        idx = h % EMBED_DIM
+        vec[idx] += 1.0
+    norm = math.sqrt(sum(x * x for x in vec))
+    if norm > 0:
+        vec = [x / norm for x in vec]
+    return struct.pack(f"{EMBED_DIM}f", *vec)
+
+
 def embed(text: str) -> bytes:
     """Compute embedding of `text`. Returns BLOB.
 
-    Backends (via GUARDIAN_EMBED_BACKEND env var):
-    - 'hashing' (default): zero-deps MD5 hashing features
-    - 'sentence-transformer': real embeddings (requires pip install sentence-transformers)
-    Falls back to hashing if external backend unavailable.
+    Backend auto-detect (GUARDIAN_EMBED_BACKEND env var):
+    - 'auto' (default): tries sentence-transformer, falls back to hashing
+    - 'hashing': zero-deps MD5 hashing features (no install needed)
+    - 'sentence-transformer': requires pip install sentence-transformers
+
+    Results cached in _EMBED_CACHE for performance.
     """
-    external = _embed_external(text)
-    if external is not None:
-        return external
+    key = f"{_EMBED_BACKEND}:{text}"
+    if key in _EMBED_CACHE:
+        return _EMBED_CACHE[key]
+    if _EMBED_BACKEND == "auto":
+        result = _embed_st(text)
+        if result is None:
+            result = _embed_hashing(text)
+    elif _EMBED_BACKEND == "sentence-transformer":
+        result = _embed_st(text)
+        if result is None:
+            result = _embed_hashing(text)
+    else:
+        result = _embed_hashing(text)
+    _EMBED_CACHE[key] = result
+    if len(_EMBED_CACHE) > 1000:
+        _EMBED_CACHE.clear()
+    return result
     tokens = _tokenize(text)
     vec = [0.0] * EMBED_DIM
     for tok in tokens:
@@ -400,8 +429,8 @@ def query(slug: str, level: str, q: str, top_k: int = 5,
 
 
 def list_nodes(slug: str, level: str, filters: dict | None = None,
-               limit: int = 100) -> list[dict]:
-    """List nodes with optional filters."""
+               limit: int = 100, include_embedding: bool = False) -> list[dict]:
+    """List nodes with optional filters. Set include_embedding=True for kNN."""
     if level not in schema.PROJECT_LEVELS:
         raise ValueError(f"Invalid project level: {level}")
     db = schema.brain_db_path(slug, level)
@@ -421,7 +450,7 @@ def list_nodes(slug: str, level: str, filters: dict | None = None,
                 params.append(float(filters["min_importance"]))
             if "needs_review" in filters:
                 where.append("needs_review = ?")
-                params.append(1 if filters["needs_review"] else 0)
+                params.append(1 if f["needs_review"] else 0)
             if "since" in filters:
                 where.append("created_at >= ?")
                 params.append(float(filters["since"]))
@@ -437,6 +466,8 @@ def list_nodes(slug: str, level: str, filters: dict | None = None,
         sql += " ORDER BY importance DESC, created_at DESC LIMIT ?"
         params.append(limit)
         rows = conn.execute(sql, params).fetchall()
+        if include_embedding:
+            return [_row_with_embedding(r) for r in rows]
         return [_row_to_dict(r) for r in rows]
     finally:
         if str(db) not in _CONN_CACHE:
@@ -560,6 +591,48 @@ def governor_evaluate(slug: str, candidate: dict) -> dict:
             }
 
     return {"action": "write", "reason": "passed all checks"}
+
+
+def governor_learn(slug: str, feedback: str, candidate: dict = None) -> dict:
+    """Learn from user feedback. Adjusts thresholds adaptively.
+
+    feedback: 'merge_was_wrong' | 'discard_was_wrong' | 'contradiction_was_false'
+    candidate: the original node that was evaluated (optional, for context)
+    """
+    th = _get_governor_thresholds(slug)
+    adj = {}
+    if feedback == "merge_was_wrong":
+        th["duplicate_threshold"] = max(0.70, th["duplicate_threshold"] - 0.02)
+        adj["duplicate_threshold"] = -0.02
+    elif feedback == "discard_was_wrong":
+        th["importance_floor"] = max(0.10, th["importance_floor"] - 0.05)
+        adj["importance_floor"] = -0.05
+    elif feedback == "contradiction_was_false":
+        th["contradiction_threshold"] = max(0.70, th["contradiction_threshold"] - 0.02)
+        adj["contradiction_threshold"] = -0.02
+    elif feedback == "merge_should_happen":
+        th["duplicate_threshold"] = min(0.99, th["duplicate_threshold"] + 0.01)
+        adj["duplicate_threshold"] = +0.01
+    elif feedback == "discard_should_happen":
+        th["importance_floor"] = min(0.90, th["importance_floor"] + 0.03)
+        adj["importance_floor"] = +0.03
+    elif feedback == "contradiction_was_correct":
+        th["contradiction_threshold"] = min(0.99, th["contradiction_threshold"] + 0.01)
+        adj["contradiction_threshold"] = +0.01
+
+    try:
+        db = schema.brain_db_path(slug, "semantic")
+        conn = sqlite3.connect(str(db))
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+            ("governor_thresholds", json.dumps(th)),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+    return {"ok": True, "thresholds": th, "adjustments": adj, "feedback": feedback}
 
 
 def governor_gc(slug: str, level: str, dry_run: bool = False) -> dict:
