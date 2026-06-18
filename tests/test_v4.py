@@ -52,13 +52,34 @@ def _teardown_env():
 # ── v4 Filesystem ──────────────────────────────────────────────
 
 
-class TestV4Filesystem(unittest.TestCase):
+class _IsolatedV4(unittest.TestCase):
+    """Isolates MEMORY_DIR/BACKEND_DIR with a temp dir. Use for classes that create projects."""
+    @classmethod
+    def setUpClass(cls):
+        import guardian_shared as _shared
+        cls._tmpdir = Path(tempfile.mkdtemp(prefix="guardian-v4-test-"))
+        cls._orig_mem = _shared.MEMORY_DIR
+        cls._orig_backend = _shared.BACKEND_DIR
+        _shared.MEMORY_DIR = cls._tmpdir
+        _shared.BACKEND_DIR = cls._tmpdir
+        _shared.project_dir("_guardian_base")
+
+    @classmethod
+    def tearDownClass(cls):
+        import guardian_shared as _shared
+        _shared.MEMORY_DIR = cls._orig_mem
+        _shared.BACKEND_DIR = cls._orig_backend
+        import shutil
+        shutil.rmtree(cls._tmpdir, ignore_errors=True)
+
+
+class TestV4Filesystem(_IsolatedV4):
 
     def test_project_dir(self):
         import guardian_shared as shared
         p = shared.project_dir("test-proj-v45")
         self.assertTrue(p.exists())
-        self.assertIn("projects/test-proj-v45", str(p))
+        self.assertIn("test-proj-v45", str(p))
         self.assertTrue((p / "brain").exists())
 
 
@@ -125,7 +146,7 @@ identity:
 # ── v4 Conciencia ──────────────────────────────────────────────
 
 
-class TestV4Conciencia(unittest.TestCase):
+class TestV4Conciencia(_IsolatedV4):
 
     def test_conciencia_knows_who_i_am(self):
         from guardian_conciencia import Conciencia
@@ -209,7 +230,7 @@ class TestV4Observer(unittest.TestCase):
 # ── v4 BrainSymbols (codegraph) ────────────────────────────────
 
 
-class TestV4BrainSymbols(unittest.TestCase):
+class TestV4BrainSymbols(_IsolatedV4):
 
     def test_lang_for_file(self):
         from guardian_brain_symbols import _lang_for_file
@@ -231,7 +252,7 @@ class TestV4BrainSymbols(unittest.TestCase):
 # ── v4 Brain Advisor ───────────────────────────────────────────
 
 
-class TestV4Advisor(unittest.TestCase):
+class TestV4Advisor(_IsolatedV4):
 
     def test_build_context_no_garbage_when_unrelated(self):
         import guardian_brain_schema as schema

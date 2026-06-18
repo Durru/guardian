@@ -84,6 +84,7 @@ class TestSchema(IsolatedTest):
 
 class TestEmbedding(unittest.TestCase):
 
+
     def test_embed_deterministic(self):
         e1 = guardian_brain.embed("hola mundo")
         e2 = guardian_brain.embed("hola mundo")
@@ -118,7 +119,7 @@ class TestEmbedding(unittest.TestCase):
         self.assertGreater(sim_ab, 0.0)
 
 
-class TestStorage(unittest.TestCase):
+class TestStorage(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("storage")
@@ -197,7 +198,7 @@ class TestStorage(unittest.TestCase):
         self.assertEqual(a, b)
 
 
-class TestGovernor(unittest.TestCase):
+class TestGovernor(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("governor")
@@ -254,7 +255,7 @@ class TestGovernor(unittest.TestCase):
         self.assertEqual(guardian_brain.count(self.slug, "semantic"), 1)
 
 
-class TestGuardianMd(unittest.TestCase):
+class TestGuardianMd(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("guardian-md")
@@ -282,7 +283,7 @@ class TestGuardianMd(unittest.TestCase):
         self.assertEqual(result["lines"], guardian_brain.GUARDIAN_MD_MAX_LINES)
 
 
-class TestWorkingMemory(unittest.TestCase):
+class TestWorkingMemory(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("wm")
@@ -302,7 +303,7 @@ class TestWorkingMemory(unittest.TestCase):
         self.assertEqual(wm["mode"], "build")
 
 
-class TestHandoff(unittest.TestCase):
+class TestHandoff(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("handoff")
@@ -325,7 +326,7 @@ class TestHandoff(unittest.TestCase):
         self.assertIsNone(h)
 
 
-class TestContextBudget(unittest.TestCase):
+class TestContextBudget(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("budget")
@@ -350,7 +351,7 @@ class TestContextBudget(unittest.TestCase):
         self.assertEqual(len(context["levels"]["episodic"]), 0)
 
 
-class TestOrchestrator(unittest.TestCase):
+class TestOrchestrator(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("orch")
@@ -379,7 +380,7 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(result["levels_queried"], ["semantic"])
 
 
-class TestReflection(unittest.TestCase):
+class TestReflection(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("refl")
@@ -404,7 +405,7 @@ class TestReflection(unittest.TestCase):
         self.assertGreaterEqual(result["promoted"], 1)
 
 
-class TestAutoCompact(unittest.TestCase):
+class TestAutoCompact(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("compact")
@@ -429,7 +430,7 @@ class TestAutoCompact(unittest.TestCase):
         self.assertGreaterEqual(result["gc_semantic"]["removed"], 1)
 
 
-class TestSessionLifecycle(unittest.TestCase):
+class TestSessionLifecycle(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("lifecycle")
@@ -474,7 +475,7 @@ class TestSessionLifecycle(unittest.TestCase):
         self.assertEqual(cont["working_memory"]["goal"], "build X")
 
 
-class TestGlobal(unittest.TestCase):
+class TestGlobal(IsolatedTest):
 
     def setUp(self):
         guardian_brain_schema.init_global()

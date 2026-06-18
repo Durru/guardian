@@ -156,6 +156,21 @@ def info(msg):
     print(f"  {msg}")
     return 0
 
+def _fmt_size(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return f"{n:.1f}{unit}"
+        n /= 1024
+    return f"{n:.1f}TB"
+
+
+def _is_first_run() -> bool:
+    if not shared.MEMORY_DIR.exists():
+        return True
+    projects = shared.discover_projects()
+    return len(projects) == 0
+
+
 def _sep(title=""):
     if title:
         print(_("\n─── {title} ───", title=title))
@@ -404,26 +419,28 @@ def cmd_setup(slug=None, auto=False):
     if isinstance(stack_config, str):
         stack_config = {}
     if not stack_config.get("test"):
-        if auto:
-            test_cmd = detected.get("test_cmd", "")
+        detected_test = detected.get("test_cmd", "")
+        if auto or detected_test:
+            test_cmd = detected_test
         else:
             try:
-                test_input = input(f"  Comando de tests [{detected.get('test_cmd', '')}]: ").strip()
+                test_input = input(f"  Comando de tests [{detected_test}]: ").strip()
             except (EOFError, KeyboardInterrupt):
                 return 1
-            test_cmd = test_input if test_input else detected.get("test_cmd", "")
+            test_cmd = test_input if test_input else detected_test
     else:
         test_cmd = stack_config["test"]
 
     if not stack_config.get("lint"):
-        if auto:
-            lint_cmd = detected.get("lint_cmd", "")
+        detected_lint = detected.get("lint_cmd", "")
+        if auto or detected_lint:
+            lint_cmd = detected_lint
         else:
             try:
-                lint_input = input(f"  Comando de lint [{detected.get('lint_cmd', '')}]: ").strip()
+                lint_input = input(f"  Comando de lint [{detected_lint}]: ").strip()
             except (EOFError, KeyboardInterrupt):
                 return 1
-            lint_cmd = lint_input if lint_input else detected.get("lint_cmd", "")
+            lint_cmd = lint_input if lint_input else detected_lint
     else:
         lint_cmd = stack_config["lint"]
 
@@ -2270,11 +2287,16 @@ def cmd_feedback(slug, cmd_args):
 
 # ── cmd_activate ───────────────────────────────────────────────
 
-def cmd_activate(slug=None):
+def cmd_activate(slug=None, skip_conciencia=False):
     """Activar Guardian en un proyecto: setup → branch → brain → absorb → docs → codegraph → conciencia."""
     import guardian_brain_schema
     import guardian_brain_symbols
     import guardian_migration_v3_layout as migration_mod
+
+    if isinstance(slug, list):
+        args = slug
+        slug = None
+        skip_conciencia = "--skip-conciencia" in args or "--fast" in args
 
     slug = slug or _find_slug()
     if not slug:
@@ -2335,21 +2357,25 @@ def cmd_activate(slug=None):
     except Exception as e:
         print(_("    ⚠️  Error indexando CodeGraph: {e}", e=e))
 
-    print(_("  Ciclo de conciencia inicial..."))
-    mode_state = shared.read_mode_state(slug)
-    mode = mode_state.get("mode", shared.DEFAULT_MODE)
-    try:
-        import urllib.request
-        import urllib.parse
-        data = json.dumps({"slug": slug, "question": f"SOY: activar guardian en {slug}", "mode": mode}).encode()
-        req = urllib.request.Request("http://127.0.0.1:9787/conciencia/cycle", data=data,
-                                     headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            result = json.loads(resp.read())
-        print(_("    Acción: {action} (confianza {confidence})", action=result.get("action", "—"), confidence=result.get("confidence", 0.0)))
-    except Exception:
-        result = guardian_conciencia.run_cycle(slug, question=f"SOY: activar guardian en {slug}", mode=mode)
-        print(_("    Acción: {action} (confianza {confidence})", action=result.get("action", "—"), confidence=result.get("confidence", 0.0)))
+    if skip_conciencia:
+        mode = shared.read_mode_state(slug).get("mode", shared.DEFAULT_MODE)
+        print(_("  (salteando ciclo de conciencia — usá --fast)"))
+    else:
+        print(_("  Ciclo de conciencia inicial..."))
+        mode_state = shared.read_mode_state(slug)
+        mode = mode_state.get("mode", shared.DEFAULT_MODE)
+        try:
+            import urllib.request
+            import urllib.parse
+            data = json.dumps({"slug": slug, "question": f"SOY: activar guardian en {slug}", "mode": mode}).encode()
+            req = urllib.request.Request("http://127.0.0.1:9787/conciencia/cycle", data=data,
+                                         headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                result = json.loads(resp.read())
+            print(_("    Acción: {action} (confianza {confidence})", action=result.get("action", "—"), confidence=result.get("confidence", 0.0)))
+        except Exception:
+            result = guardian_conciencia.run_cycle(slug, question=f"SOY: activar guardian en {slug}", mode=mode)
+            print(_("    Acción: {action} (confianza {confidence})", action=result.get("action", "—"), confidence=result.get("confidence", 0.0)))
 
     print()
     print(_("  ✅ Guardian activado para '{slug}'", slug=slug))
@@ -2358,6 +2384,22 @@ def cmd_activate(slug=None):
     print(_("  Modo:     {mode}", mode=mode))
     print()
     return 0
+
+
+def cmd_init(slug=None):
+    """Quick bootstrap: detect → setup auto → activate sin conciencia."""
+    slug = slug or _find_slug()
+    if not slug:
+        cwd = Path.cwd()
+        slug = _slugify(cwd.name)
+    config = _read_config(slug)
+    if config:
+        print(_("  ⚠ Proyecto '{slug}' ya está configurado.", slug=slug))
+        print(_("     Ejecutá 'guardian activate {slug}' si necesitás re-activar.", slug=slug))
+        return 0
+    print(_("  🚀 Inicializando Guardian en '{slug}'...", slug=slug))
+    cmd_setup(slug, auto=True)
+    return cmd_activate(slug, skip_conciencia=True)
 
 
 def cmd_consolidate(slug, cmd_args):
@@ -2694,8 +2736,27 @@ def cmd_projects(subcmd, subargs):
         else:
             return err("Uso: guardian projects absorb match")
 
+    elif subcmd == "cleanup":
+        import re as _re
+        count = 0
+        freed = 0
+        for slug in list(projects):
+            if _re.match(r'^[a-z]+-[0-9a-f]{8}$', slug):
+                path = shared.project_dir(slug)
+                sz = sum(f.stat().st_size for f in path.rglob('*') if f.is_file()) if path.exists() else 0
+                import shutil
+                shutil.rmtree(path, ignore_errors=True)
+                config = shared.project_dir(slug) / "config.yaml"
+                if config.exists():
+                    config.unlink()
+                count += 1
+                freed += sz
+                print(f"  ✂ {slug:<40} {_fmt_size(sz)}")
+        print(shared._("projects_cleanup_done", count=count, size=_fmt_size(freed)))
+        return 0
+
     else:
-        return err(f"Subcomando no válido: '{subcmd}'. Usá: list, status, gc, absorb")
+        return err(f"Subcomando no válido: '{subcmd}'. Usá: list, status, gc, absorb, cleanup")
 
     return 0
 
@@ -3375,23 +3436,32 @@ def cmd_compact_memory(args):
     return 0
 
 # ── main ────────────────────────────────────────────────────────
-
 def main():
+    if _is_first_run() and len(sys.argv) >= 2 and sys.argv[1] not in ("--help", "-h", "--ayuda", "--version", "-v"):
+        print("🛡️  Nexxoria Guardian v4.6.0")
+        print()
+        print(_("  👋 Parece que es la primera vez que usás Guardian."))
+        print(_("     Para empezar, andá a tu proyecto y ejecutá:"))
+        print(_("         guardian init"))
+        print(_("     O si ya estás en tu proyecto, simplemente:"))
+        print(_("         guardian init ."))
+        print(_("     También podés ver la ayuda completa con: guardian --help"))
+        print()
+
     if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h", "--ayuda"):
         print("🛡️  Nexxoria Guardian v4.6.0")
-
-
 
         print()
         print("Usage: guardian <command> [args...]")
         print()
         print("Proyecto:")
-        print("  activate [slug]              Activar Guardian (setup + branch + brain + absorb + docs + codegraph + conciencia)")
+        print("  init [slug]                  Bootstrap rápido (detect → setup → activate --fast)")
+        print("  activate [slug] [--fast]     Activar Guardian (setup + branch + brain + absorb + docs + codegraph + conciencia)")
         print("  detect                       Detectar proyecto actual")
         print("  status [slug]                Dashboard del proyecto")
         print("  check [slug]                 Verificar reglas y paths protegidos")
         print("  report [slug]                Violaciones, tendencias, cumplimiento")
-        print("  setup [slug]                 Configurar proyecto")
+        print("  setup [slug]                 Configurar proyecto (auto si stack detectable)")
         print()
         print("Cambios:")
         print("  protect <path> [slug]        Proteger un path")
@@ -3486,9 +3556,11 @@ def main():
     if cmd == "detect":
         return cmd_detect()
 
+    if cmd == "init":
+        return cmd_init(cmd_args[0] if cmd_args else None)
+
     if cmd == "activate":
-        slug = cmd_args[0] if cmd_args else None
-        return cmd_activate(slug)
+        return cmd_activate(cmd_args)
 
     if cmd in ("status", "check", "report"):
         slug, rest = _resolve_slug(cmd_args)
@@ -3788,7 +3860,7 @@ def main():
 
     if cmd == "projects":
         if not cmd_args:
-            return err("Uso: guardian projects <list|status|gc|absorb> [args]")
+            return err("Uso: guardian projects <list|status|gc|absorb|cleanup> [args]")
         sub = cmd_args[0]
         subargs = cmd_args[1:]
         return cmd_projects(sub, subargs)
