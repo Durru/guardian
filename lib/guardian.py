@@ -3424,6 +3424,7 @@ def main():
         print("  fork <parent> <child>                                  Fork con linaje")
         print("  lineage <slug>                                          Ver árbol genealógico")
         print("  migrate <status|migrate|rollback> <slug>                Migrar v3 → v4 layout")
+        print("  migrate-v45 <status|migrate> [slug] [--dry-run]         Migrar v4 → v4.5 unificado")
         print()
         print("Stack:")
         print("  build|dev|test|lint|typecheck|deploy|logs [slug]")
@@ -3670,6 +3671,20 @@ def main():
         return cmd_lineage(cmd_args)
     if cmd == "migrate":
         return cmd_migrate(cmd_args)
+    if cmd == "migrate-v45":
+        import guardian_migration_v45 as m45
+        if not cmd_args:
+            print("Uso: migrate-v45 <status|migrate> [slug] [--dry-run]")
+            return 1
+        sub = cmd_args[0]
+        rest = cmd_args[1:]
+        if sub == "status":
+            return m45.cmd_status(rest)
+        elif sub == "migrate":
+            return m45.cmd_migrate(rest)
+        else:
+            print("Subcomando: status | migrate")
+            return 1
 
     if cmd == "memory":
         return cmd_memory(cmd_args)
