@@ -295,7 +295,7 @@ def _dict_to_node_fields(node: dict) -> dict:
 
 
 def read(slug: str, level: str, node_id: str) -> dict | None:
-    """Read a single node by ID. Updates last_accessed and access_count."""
+    """Read a single node by ID. Updates last_accessed, access_count, and spikes activation."""
     if level not in schema.PROJECT_LEVELS:
         raise ValueError(f"Invalid project level: {level}")
     db = schema.brain_db_path(slug, level)
@@ -312,6 +312,10 @@ def read(slug: str, level: str, node_id: str) -> dict | None:
         row = conn.execute("SELECT * FROM nodes WHERE id = ?", (node_id,)).fetchone()
         if row is None:
             return None
+        try:
+            spike_node(slug, level, node_id)
+        except Exception:
+            pass
         return _row_to_dict(row)
     finally:
         if str(db) not in _CONN_CACHE:
@@ -727,6 +731,11 @@ USAGE = """Guardian Brain — usage:
   gc <slug> <level> [--dry-run]        run governor GC
   embed <text>                         show embedding dimension
   cosine <text-a> <text-b>             show cosine similarity
+  learn <slug> <feedback>              governor_learn (merge_was_wrong, discard_was_wrong, etc.)
+  spike <slug> <level> <id> [amount]   spike activation potential
+  decay <slug> <level> [factor]        decay all potentials
+  gc-potential <slug> <level> [threshold]  prune below-threshold nodes
+  hebbian <slug> <level> <a> <b>       reinforce link between two nodes
 """
 
 
@@ -870,6 +879,30 @@ def main():
         result = auto_compact(slug, dry_run=dry_run)
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0
+    if cmd == "spike":
+        slug, level, nid = sys.argv[2], sys.argv[3], sys.argv[4]
+        amount = float(sys.argv[5]) if len(sys.argv) > 5 else 0.1
+        print(json.dumps(spike_node(slug, level, nid, amount)))
+        return 0
+    if cmd == "decay":
+        slug, level = sys.argv[2], sys.argv[3]
+        factor = float(sys.argv[4]) if len(sys.argv) > 4 else 0.99
+        print(json.dumps(decay_potentials(slug, level, factor)))
+        return 0
+    if cmd == "gc-potential":
+        slug, level = sys.argv[2], sys.argv[3]
+        threshold = float(sys.argv[4]) if len(sys.argv) > 4 else 0.15
+        dry_run = "--dry-run" in sys.argv
+        print(json.dumps(gc_by_potential(slug, level, threshold, dry_run)))
+        return 0
+    if cmd == "hebbian":
+        slug, level, a, b = sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+        print(json.dumps(hebbian_link(slug, level, a, b)))
+        return 0
+    if cmd == "learn":
+        slug, feedback = sys.argv[2], sys.argv[3]
+        print(json.dumps(governor_learn(slug, feedback)))
+        return 0
     print(f"Unknown command: {cmd}")
     print(USAGE)
     return 1
@@ -964,6 +997,154 @@ def generate_guardian_md(slug: str) -> str:
 def regenerate_guardian_md(slug: str) -> dict:
     content = generate_guardian_md(slug)
     return write_guardian_md(slug, content)
+
+
+# ── Spiking Memory — activation potentials (v4.5.1) ─────────────────
+
+
+def _ensure_activation_table(slug: str, level: str):
+    """Ensure activation_potentials table exists (idempotent)."""
+    db = schema.brain_db_path(slug, level)
+    conn = _connect(db)
+    try:
+        conn.executescript(schema.NODE_DDL.split("event_log")[0] + """
+CREATE TABLE IF NOT EXISTS activation_potentials (
+    node_id TEXT PRIMARY KEY,
+    potential REAL DEFAULT 0.5,
+    last_spike REAL,
+    decay_rate REAL DEFAULT 0.99
+);
+CREATE TABLE IF NOT EXISTS hebbian_links (
+    node_a TEXT, node_b TEXT, weight REAL DEFAULT 0.1,
+    last_reinforced REAL,
+    PRIMARY KEY (node_a, node_b)
+);
+""")
+        conn.commit()
+    finally:
+        if str(db) not in _CONN_CACHE:
+            conn.close()
+
+
+def spike_node(slug: str, level: str, node_id: str, amount: float = 0.1) -> dict:
+    """Activate a node — increases its potential (like a neuron firing).
+
+    Each access spikes the node. Co-accessed nodes strengthen their Hebbian link.
+    """
+    _ensure_activation_table(slug, level)
+    db = schema.brain_db_path(slug, level)
+    conn = _connect(db)
+    try:
+        now = _now_epoch()
+        row = conn.execute(
+            "SELECT potential, decay_rate FROM activation_potentials WHERE node_id = ?",
+            (node_id,),
+        ).fetchone()
+        if row:
+            new_potential = min(1.0, row[0] + amount)
+            conn.execute(
+                "UPDATE activation_potentials SET potential = ?, last_spike = ? WHERE node_id = ?",
+                (new_potential, now, node_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO activation_potentials (node_id, potential, last_spike) VALUES (?, ?, ?)",
+                (node_id, min(1.0, amount), now),
+            )
+        conn.commit()
+        return {"ok": True, "node_id": node_id, "spike": amount}
+    finally:
+        if str(db) not in _CONN_CACHE:
+            conn.close()
+
+
+def hebbian_link(slug: str, level: str, node_a: str, node_b: str, amount: float = 0.05) -> dict:
+    """Strengthen connection between two co-accessed nodes (Hebbian learning).
+
+    Nodes that fire together, wire together.
+    """
+    _ensure_activation_table(slug, level)
+    if node_a == node_b:
+        return {"ok": False, "error": "cannot link node to itself"}
+    db = schema.brain_db_path(slug, level)
+    conn = _connect(db)
+    try:
+        now = _now_epoch()
+        row = conn.execute(
+            "SELECT weight FROM hebbian_links WHERE node_a = ? AND node_b = ?",
+            (node_a, node_b),
+        ).fetchone()
+        if row:
+            new_w = min(1.0, row[0] + amount)
+            conn.execute(
+                "UPDATE hebbian_links SET weight = ?, last_reinforced = ? WHERE node_a = ? AND node_b = ?",
+                (new_w, now, node_a, node_b),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO hebbian_links (node_a, node_b, weight, last_reinforced) VALUES (?, ?, ?, ?)",
+                (node_a, node_b, amount, now),
+            )
+        conn.commit()
+        return {"ok": True, "node_a": node_a, "node_b": node_b, "weight": amount}
+    finally:
+        if str(db) not in _CONN_CACHE:
+            conn.close()
+
+
+def decay_potentials(slug: str, level: str, factor: float = 0.99) -> dict:
+    """Apply exponential decay to all activation potentials.
+
+    Memories that aren't accessed slowly lose potential.
+    Below-threshold nodes become GC candidates.
+    """
+    _ensure_activation_table(slug, level)
+    db = schema.brain_db_path(slug, level)
+    conn = _connect(db)
+    try:
+        affected = conn.execute(
+            "UPDATE activation_potentials SET potential = potential * ? WHERE potential > 0.01",
+            (factor,),
+        ).rowcount
+        conn.commit()
+        return {"ok": True, "decayed": affected, "factor": factor}
+    finally:
+        if str(db) not in _CONN_CACHE:
+            conn.close()
+
+
+def gc_by_potential(slug: str, level: str, threshold: float = 0.15, dry_run: bool = False) -> dict:
+    """Remove nodes with activation potential below threshold (memory pruning).
+
+    Simulates synaptic pruning — weak connections die off.
+    """
+    _ensure_activation_table(slug, level)
+    db = schema.brain_db_path(slug, level)
+    conn = _connect(db)
+    try:
+        candidates = conn.execute(
+            "SELECT node_id FROM activation_potentials WHERE potential < ?",
+            (threshold,),
+        ).fetchall()
+        node_ids = [r[0] for r in candidates]
+        if not dry_run:
+            for nid in node_ids:
+                conn.execute("DELETE FROM hebbian_links WHERE node_a = ? OR node_b = ?", (nid, nid))
+                conn.execute("DELETE FROM activation_potentials WHERE node_id = ?", (nid,))
+                conn.execute("DELETE FROM nodes WHERE id = ?", (nid,))
+            conn.commit()
+        return {"ok": True, "pruned": len(node_ids), "dry_run": dry_run, "threshold": threshold}
+    finally:
+        if str(db) not in _CONN_CACHE:
+            conn.close()
+
+
+def spike_read(slug: str, level: str, node_id: str) -> None:
+    """Call from read() to spike the accessed node."""
+    try:
+        spike_node(slug, level, node_id, amount=0.1)
+    except Exception:
+        pass
 
 
 # ── Observation system ─────────────────────────────────

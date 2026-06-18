@@ -179,6 +179,25 @@ CREATE TABLE IF NOT EXISTS event_log (
 );
 CREATE INDEX IF NOT EXISTS idx_el_ts ON event_log(ts);
 CREATE INDEX IF NOT EXISTS idx_el_type ON event_log(event_type);
+
+-- v4.5.1: Spiking Memory — activation potentials
+CREATE TABLE IF NOT EXISTS activation_potentials (
+    node_id TEXT PRIMARY KEY,
+    potential REAL DEFAULT 0.5,
+    last_spike REAL,
+    decay_rate REAL DEFAULT 0.99,
+    FOREIGN KEY (node_id) REFERENCES nodes(id)
+);
+
+CREATE TABLE IF NOT EXISTS hebbian_links (
+    node_a TEXT,
+    node_b TEXT,
+    weight REAL DEFAULT 0.1,
+    last_reinforced REAL,
+    PRIMARY KEY (node_a, node_b)
+);
+CREATE INDEX IF NOT EXISTS idx_hl_a ON hebbian_links(node_a);
+CREATE INDEX IF NOT EXISTS idx_hl_b ON hebbian_links(node_b);
 """
 
 NODE_DDL = """
