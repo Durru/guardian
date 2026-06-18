@@ -818,7 +818,20 @@ def write_guardian_md(slug: str, content: str) -> dict:
     lines = content.splitlines()
     truncated = False
     if len(lines) > GUARDIAN_MD_MAX_LINES:
-        lines = lines[:GUARDIAN_MD_MAX_LINES]
+        header = []
+        body = []
+        in_header = True
+        for l in lines:
+            if in_header and l.startswith("#"):
+                header.append(l)
+            elif in_header and not l.strip():
+                header.append(l)
+            else:
+                in_header = False
+                body.append(l)
+        keep_header = header[:4]
+        keep_body = body[-(GUARDIAN_MD_MAX_LINES - len(keep_header) - 1):]
+        lines = keep_header + [""] + keep_body
         truncated = True
     gmd = schema.guardian_md_path(slug)
     gmd.parent.mkdir(parents=True, exist_ok=True)
