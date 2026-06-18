@@ -224,7 +224,10 @@ class Conciencia:
         )
 
     def _compute_confidence(self, percept: Percept) -> float:
-        """Compute confidence based on available data. Heuristic, not LLM."""
+        """Compute confidence based on available data. Heuristic, not LLM.
+
+        Incorporates kNN prediction from past cycles if available.
+        """
         score = 0.5  # base
         wk = percept.what_i_know
         if wk.get("conciencia_state", {}).get("cycles", 0) > 0:
@@ -232,12 +235,21 @@ class Conciencia:
         if percept.sources:
             score += 0.1
         if wk.get("advisor_context"):
-            score += 0.1  # v4 D15: Advisor enrichment = more certainty
+            score += 0.1
         if percept.event.get("context"):
             score += 0.05
         if percept.event.get("explicit_question"):
             score += 0.1
-        # Cap at 0.99 (never 1.0: there's always some uncertainty)
+
+        # v4.5.1: kNN prediction boost
+        if self.slug:
+            question = percept.event.get("question", "")
+            pred = predict_action(self.slug, question, self.mode, score)
+            if pred.get("method") == "knn":
+                score = pred["confidence"]
+                if pred.get("predicted"):
+                    percept.sources.append(f"prediction:{pred['predicted']}(sim={len(pred.get('scores', {}))})")
+
         return min(0.99, max(0.0, score))
 
     def who_am_i(self) -> dict:
@@ -308,12 +320,18 @@ class Conciencia:
             state["updated"] = shared.ts()
         if slug:
             write_state(slug, state)
+            try:
+                save_cycle_as_observation(slug, cycle)
+            except Exception:
+                pass
         meta = _evolve(slug, state.get("cycles", []), self.thresholds) if slug else None
+        prediction = predict_action(slug, question, self.mode, decision.confidence) if slug else {}
         return {
             "slug": slug,
             "mode": self.mode,
             "confidence": round(decision.confidence, 3),
             "action": decision.action,
+            "prediction": prediction,
             "state": state,
             "meta": meta,
             "decision": decision.to_dict(),
@@ -457,6 +475,89 @@ def _evolve(slug, cycles, thresholds):
 
 # Alias for backward compat
 evolve = _evolve
+
+
+# ═══════════════════════════════════════════════════════════════════
+# E: Conciencia Predictiva — kNN sobre ciclos pasados (v4.5.1)
+# ═══════════════════════════════════════════════════════════════════
+
+def _cycle_to_query_text(cycle: dict) -> str:
+    """Convert a cycle to a searchable text for embedding similarity."""
+    parts = [
+        cycle.get("action", ""),
+        cycle.get("mode", ""),
+        cycle.get("question", ""),
+    ]
+    return " | ".join(parts)
+
+
+def predict_action(slug: str, question: str, mode: str = "plan",
+                   confidence: float = 0.5) -> dict:
+    """Predict the best action using kNN over past cycles stored in brain.
+
+    Returns dict with predicted_action, confidence, similar_cycles.
+    Falls back to consciousness_action() if not enough data.
+    """
+    try:
+        import guardian_brain as brain
+
+        query_text = f"cycle: {mode} {question}"
+        q_emb = brain.embed(query_text)
+
+        # Search in semantic DB for past cycles stored as observations
+        similar = brain.query(slug, "semantic", query_text, top_k=5,
+                              min_similarity=0.15)
+
+        if not similar:
+            return {"predicted": None, "confidence": confidence,
+                    "similar": 0, "method": "fallback"}
+
+        # Weight action predictions by similarity
+        action_scores = {}
+        for n in similar:
+            sim = n.get("similarity", 0)
+            action = n.get("content", "").split(" | ")[0] if " | " in n.get("content", "") else ""
+            if action and sim > 0.2:
+                action_scores[action] = action_scores.get(action, 0) + sim
+
+        if not action_scores:
+            return {"predicted": None, "confidence": confidence,
+                    "similar": len(similar), "method": "fallback"}
+
+        best_action = max(action_scores, key=action_scores.get)
+        best_score = action_scores[best_action]
+        # Scale prediction influence: more similar cycles = stronger signal
+        prediction_boost = min(0.15, best_score * 0.1)
+
+        return {
+            "predicted": best_action,
+            "confidence": min(0.99, confidence + prediction_boost),
+            "similar": len(similar),
+            "scores": action_scores,
+            "method": "knn",
+        }
+    except Exception:
+        return {"predicted": None, "confidence": confidence,
+                "similar": 0, "method": "fallback"}
+
+
+def save_cycle_as_observation(slug: str, cycle: dict) -> None:
+    """Store a cycle in the brain for future predictions."""
+    try:
+        import guardian_brain as brain
+        content = _cycle_to_query_text(cycle)
+        brain.write_observation(
+            slug=slug,
+            obs_type="cycle",
+            topic_key=f"cycle/{cycle.get('action', 'unknown')}",
+            content=content[:200],
+            why=f"auto: conciencia cycle in {cycle.get('mode', 'plan')} mode",
+            outcome="info",
+            scope="project",
+            tags=["conciencia_cycle", cycle.get("action", ""), cycle.get("mode", "")],
+        )
+    except Exception:
+        pass
 
 
 # ── Module-level API (backward compat) ────────────────────────────
