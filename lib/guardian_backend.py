@@ -272,7 +272,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             import guardian_mcp
             return _json_response(self, 200, {"tools": guardian_mcp.TOOLS})
 
-        # ── v3 brain endpoints ──
+        # ── brain endpoints ──
         if parsed.path == "/brain/status":
             slug = _project_slug(params)
             if not slug:
@@ -309,7 +309,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
                 return _json_response(self, 400, {"error": "slug required"})
             return _json_response(self, 200, {"handoff": guardian_brain.read_handoff(slug)})
 
-        # ── v3 knowledge endpoints ──
+        # ── knowledge endpoints ──
         if parsed.path == "/knowledge/list":
             slug = _project_slug(params)
             kind = params.get("kind", [None])[0]
@@ -661,7 +661,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             result["status"] = "ok"
             return _json_response(self, 200, result)
 
-        # ── v3 brain POST ──
+        # ── brain POST ──
         if parsed.path == "/brain/write":
             slug = _project_slug(params, body)
             level = str(body.get("level", "semantic"))
@@ -702,7 +702,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             dry_run = bool(body.get("dry_run", False))
             return _json_response(self, 200, guardian_brain.auto_compact(slug, dry_run=dry_run))
 
-        # ── v3 session POST ──
+        # ── session POST ──
         if parsed.path == "/session/start":
             slug = _project_slug(params, body)
             if not slug:
@@ -723,7 +723,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
             reason = str(body.get("reason", "explicit"))
             return _json_response(self, 200, guardian_brain.session_end(slug, reason=reason))
 
-        # ── v3 knowledge POST ──
+        # ── knowledge POST ──
         if parsed.path == "/knowledge/research":
             slug = _project_slug(params, body)
             query = str(body.get("query", ""))
@@ -745,7 +745,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
                 return _json_response(self, 400, {"error": "slug required"})
             return _json_response(self, 200, guardian_knowledge.refresh(slug))
 
-        # ── v3 specialization POST ──
+        # ── specialization POST ──
         if parsed.path == "/specializations/enable":
             slug = _project_slug(params, body)
             name = str(body.get("name", ""))
@@ -760,7 +760,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
                 return _json_response(self, 400, {"error": "slug and name required"})
             return _json_response(self, 200, guardian_specialization.disable(slug, name))
 
-        # ── v3 plan POST ──
+        # ── plan POST ──
         if parsed.path == "/plan/new":
             slug = _project_slug(params, body)
             title = str(body.get("title", ""))
@@ -769,7 +769,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
                 return _json_response(self, 400, {"error": "slug and title required"})
             return _json_response(self, 200, guardian_plan.new_plan(slug, title, plan_type=plan_type))
 
-        # ── v3 publish/clone/fork/migrate POST ──
+        # ── publish/clone/fork/migrate POST ──
         if parsed.path == "/publish":
             slug = _project_slug(params, body)
             version = str(body.get("version", "1.0.0"))
@@ -799,7 +799,7 @@ class GuardianBackendHandler(BaseHTTPRequestHandler):
                 return _json_response(self, 400, {"error": "slug required"})
             return _json_response(self, 200, guardian_brain_migration.migrate(slug, dry_run=dry_run))
 
-        # ── v3 capability POST ──
+        # ── capability POST ──
         if parsed.path == "/capability/measure":
             task_type = str(body.get("task_type", ""))
             success = bool(body.get("success", False))

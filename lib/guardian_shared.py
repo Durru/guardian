@@ -29,9 +29,10 @@ def user_branch_path() -> Path:
     """The user's unique branch. One per machine/user.
 
     Layout: $GUARDIAN_DATA/users/<machine-id>/...
+    Derives from BACKEND_DIR so test overrides propagate.
     """
     machine_id = _get_machine_id()
-    branch = USERS_DIR / machine_id
+    branch = BACKEND_DIR / "users" / machine_id
     branch.mkdir(parents=True, exist_ok=True)
     (branch / "evolution").mkdir(exist_ok=True)
     return branch
@@ -44,6 +45,16 @@ def project_root_path(slug: str) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     (root / "brain").mkdir(exist_ok=True)
     return root
+
+
+def _v4_project_root(slug: str) -> Path:
+    """v4 root path (no side effects)."""
+    return user_branch_path() / "projects" / slug / "root"
+
+
+def _v3_path(slug: str, *parts: str) -> Path:
+    """v3 path under MEMORY_DIR/projects/<slug>/..."""
+    return MEMORY_DIR / slug / "/".join(parts)
 
 GUARDIAN_LANG = os.environ.get("GUARDIAN_LANG", "en")
 
@@ -1212,14 +1223,21 @@ def discover_projects():
 
 
 def read_config(slug: str):
-    path = MEMORY_DIR / slug / "config.yaml"
-    if not path.exists():
-        return {}
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8", errors="replace"))
-        return _stringify_datetimes(data) if isinstance(data, dict) else {}
-    except yaml.YAMLError:
-        return {}
+    v4 = _v4_project_root(slug) / "config.yaml"
+    if v4.exists():
+        try:
+            data = yaml.safe_load(v4.read_text(encoding="utf-8", errors="replace"))
+            return _stringify_datetimes(data) if isinstance(data, dict) else {}
+        except yaml.YAMLError:
+            return {}
+    v3 = _v3_path(slug, "config.yaml")
+    if v3.exists():
+        try:
+            data = yaml.safe_load(v3.read_text(encoding="utf-8", errors="replace"))
+            return _stringify_datetimes(data) if isinstance(data, dict) else {}
+        except yaml.YAMLError:
+            return {}
+    return {}
 
 
 def _stringify_datetimes(value):
@@ -1235,10 +1253,14 @@ def _stringify_datetimes(value):
 
 
 def write_config(slug: str, config: dict):
-    path = MEMORY_DIR / slug / "config.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
     data = _stringify_datetimes(config)
-    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    v4 = _v4_project_root(slug) / "config.yaml"
+    v4.parent.mkdir(parents=True, exist_ok=True)
+    v4.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    v3 = _v3_path(slug, "config.yaml")
+    if v3.parent.exists():
+        v3.parent.mkdir(parents=True, exist_ok=True)
+        v3.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
 
 def read_json(path: Path, default=None):
@@ -1249,31 +1271,46 @@ def read_json(path: Path, default=None):
 
 
 def read_audit(slug: str):
-    data = read_json(MEMORY_DIR / slug / "audit.json", [])
-    return data if isinstance(data, list) else []
+    v4 = _v4_project_root(slug) / "audit.json"
+    data = read_json(v4, None)
+    if data is not None:
+        return data if isinstance(data, list) else []
+    v3 = _v3_path(slug, "audit.json")
+    return read_json(v3, [])
 
 
 def write_audit(slug: str, entries):
-    path = MEMORY_DIR / slug / "audit.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
+    v4 = _v4_project_root(slug) / "audit.json"
+    v4.parent.mkdir(parents=True, exist_ok=True)
+    v4.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
+    v3 = _v3_path(slug, "audit.json")
+    if v3.parent.exists():
+        v3.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def read_skills_json(slug: str):
-    data = read_json(MEMORY_DIR / slug / "skills.json", None)
-    if data is None:
-        return {"relevant": [], "scores": {}, "hot": [], "last_match": None}
-    return data
+    v4 = _v4_project_root(slug) / "skills.json"
+    data = read_json(v4, None)
+    if data is not None:
+        return data
+    v3 = _v3_path(slug, "skills.json")
+    return read_json(v3, {"relevant": [], "scores": {}, "hot": [], "last_match": None})
 
 
 def write_skills_json(slug: str, data: dict):
-    path = MEMORY_DIR / slug / "skills.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    v4 = _v4_project_root(slug) / "skills.json"
+    v4.parent.mkdir(parents=True, exist_ok=True)
+    v4.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    v3 = _v3_path(slug, "skills.json")
+    if v3.parent.exists():
+        v3.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def read_mode_state(slug: str):
-    data = read_json(MEMORY_DIR / slug / "mode-state.json", None)
+    v4 = _v4_project_root(slug) / "mode-state.json"
+    data = read_json(v4, None)
+    if data is None:
+        data = read_json(_v3_path(slug, "mode-state.json"), None)
     if not isinstance(data, dict):
         data = {}
     data.setdefault("mode", DEFAULT_MODE)
@@ -1285,13 +1322,16 @@ def read_mode_state(slug: str):
 
 
 def write_mode_state(slug: str, data: dict):
-    path = MEMORY_DIR / slug / "mode-state.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
+    v4 = _v4_project_root(slug) / "mode-state.json"
+    v4.parent.mkdir(parents=True, exist_ok=True)
     payload = dict(data)
     payload.setdefault("mode", DEFAULT_MODE)
     payload.setdefault("updated", ts())
     payload.setdefault("history", [])
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    v4.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    v3 = _v3_path(slug, "mode-state.json")
+    if v3.parent.exists():
+        v3.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def append_mode_history(slug: str, mode: str, reason: str = ""):
@@ -1307,7 +1347,10 @@ def append_mode_history(slug: str, mode: str, reason: str = ""):
 
 
 def read_knowledge_index(slug: str):
-    data = read_json(MEMORY_DIR / slug / "knowledge" / "index.json", None)
+    v4 = _v4_project_root(slug) / "knowledge" / "index.json"
+    data = read_json(v4, None)
+    if data is None:
+        data = read_json(_v3_path(slug, "knowledge", "index.json"), None)
     if not isinstance(data, dict):
         data = {}
     data.setdefault("tomes", [])
@@ -1316,16 +1359,20 @@ def read_knowledge_index(slug: str):
 
 
 def write_knowledge_index(slug: str, data: dict):
-    path = MEMORY_DIR / slug / "knowledge" / "index.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = dict(data)
-    payload.setdefault("tomes", [])
-    payload.setdefault("updated", ts())
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    v4 = _v4_project_root(slug) / "knowledge" / "index.json"
+    v4.parent.mkdir(parents=True, exist_ok=True)
+    v4.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    v3 = _v3_path(slug, "knowledge", "index.json")
+    if v3.parent.exists():
+        v3.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def read_memory(slug: str):
-    mf = MEMORY_DIR / slug / "memory.jsonl"
+    v4 = _v4_project_root(slug) / "brain" / "memory.jsonl"
+    if v4.exists() and v4.stat().st_size > 0:
+        mf = v4
+    else:
+        mf = MEMORY_DIR / slug / "memory.jsonl"
     if not mf.exists() or mf.stat().st_size == 0:
         return []
     entries = []

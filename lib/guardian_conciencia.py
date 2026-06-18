@@ -322,44 +322,69 @@ class Conciencia:
         }
 
 
-# ── Legacy helpers (kept for backward compat with tests/cmd_conciencia) ──
+# ── v4 state/thresholds with v3 fallback ──
+
+
+def _v4_brain_path(slug: str, *parts: str) -> Path:
+    return shared._v4_project_root(slug) / "brain" / "/".join(parts)
+
+
+def _v3_path(slug: str, *parts: str) -> Path:
+    return shared.MEMORY_DIR / slug / "/".join(parts)
 
 
 def read_state(slug):
-    p = shared.MEMORY_DIR / slug / "conciencia-state.json"
-    if not p.exists():
-        return {"cycles": [], "last_action": None, "last_confidence": 0.0}
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
+    v4 = _v4_brain_path(slug, "conciencia-state.json")
+    if v4.exists():
+        try:
+            return json.loads(v4.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    v3 = _v3_path(slug, "conciencia-state.json")
+    if v3.exists():
+        try:
+            return json.loads(v3.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"cycles": [], "last_action": None, "last_confidence": 0.0}
 
 
 def write_state(slug, data):
-    p = shared.MEMORY_DIR / slug / "conciencia-state.json"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    v4 = _v4_brain_path(slug, "conciencia-state.json")
+    v4.parent.mkdir(parents=True, exist_ok=True)
+    v4.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    v3 = _v3_path(slug, "conciencia-state.json")
+    if v3.parent.exists():
+        v3.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def read_thresholds(slug):
-    p = shared.MEMORY_DIR / slug / "conciencia-thresholds.json"
-    if not p.exists():
-        return {"assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2}
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {"assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2}
+    v4 = _v4_brain_path(slug, "conciencia-thresholds.json")
+    if v4.exists():
+        try:
+            return json.loads(v4.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    v3 = _v3_path(slug, "conciencia-thresholds.json")
+    if v3.exists():
+        try:
+            return json.loads(v3.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"assume": 0.8, "ask_little_floor": 0.5, "ask_much_floor": 0.2}
 
 
 def write_thresholds(slug, data):
-    p = shared.MEMORY_DIR / slug / "conciencia-thresholds.json"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    v4 = _v4_brain_path(slug, "conciencia-thresholds.json")
+    v4.parent.mkdir(parents=True, exist_ok=True)
+    v4.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    v3 = _v3_path(slug, "conciencia-thresholds.json")
+    if v3.parent.exists():
+        v3.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def save_learning(slug, entry):
     """Save a learning entry. Backward compat: writes to both legacy and v4 paths."""
-    from pathlib import Path
     # Legacy v2 path
     p = Path(shared.MEMORY_DIR) / slug / "learnings.jsonl"
     p.parent.mkdir(parents=True, exist_ok=True)

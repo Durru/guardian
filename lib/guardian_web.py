@@ -575,7 +575,7 @@ class GuardianHandler(http.server.BaseHTTPRequestHandler):
         self._send_json({"slug": slug, "audit": audit, "count": len(audit)})
 
     def _serve_guardian_md(self, slug):
-        """v3: serve GUARDIAN.md as editable HTML."""
+        """Serve GUARDIAN.md as editable HTML."""
         import guardian_brain
         guardian_brain_schema = _get_brain_schema()
         guardian_brain_schema.init_project(slug)
@@ -621,7 +621,7 @@ document.querySelector('form').onsubmit = async (e) => {{
         self._send_html(body)
 
     def _serve_guardian_md_save(self, slug, parts):
-        """v3: save GUARDIAN.md from form data or JSON body."""
+        """Save GUARDIAN.md from form data or JSON body."""
         import guardian_brain
         guardian_brain_schema = _get_brain_schema()
         guardian_brain_schema.init_project(slug)

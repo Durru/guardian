@@ -2662,7 +2662,7 @@ def cmd_projects(subcmd, subargs):
 
     return 0
 
-# ── v3 commands: lifecycle, brain, think/remember/recall ─────────
+# ── commands: lifecycle, brain, think/remember/recall ─────────
 
 def _resolve_slug_or_pwd(args, positional_idx=0):
     """Resolve a slug from args, or detect from PWD."""
@@ -3404,7 +3404,7 @@ def main():
         print("  issue <sub> [args]           GitHub Issues integration")
         print("  projects <sub> [args]        Gestión multi-proyecto")
         print()
-        print("Guardian v3 (Cognitive Memory):")
+        print("Guardian v4 (Cognitive Memory):")
         print("  start [slug] [--mode=read|plan|build|commit|review]   Iniciar sesión")
         print("  continue [slug]                                       Retomar sesión")
         print("  end [slug]                                            Cerrar sesión")
@@ -3654,7 +3654,7 @@ def main():
         return cmd_plan(cmd_args)
     if cmd == "maintain":
         return cmd_maintain(cmd_args)
-    # ── v3: global, capability, publish, templates, clone, fork, lineage, migrate ──
+    # ── global, capability, publish, templates, clone, fork, lineage, migrate ──
     if cmd == "global":
         return cmd_global(cmd_args)
     if cmd == "capability":

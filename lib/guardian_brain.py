@@ -1436,7 +1436,7 @@ def session_end(slug: str, reason: str = "explicit") -> dict:
 
 
 def _format_greeting(slug: str, wm: dict, context: dict, handoff: dict = None) -> str:
-    lines = [f"🛡️  Guardian v3 — {slug}", ""]
+    lines = [f"🛡️  Guardian v4 — {slug}", ""]
     if handoff:
         lines.append(f"👋 Hola de nuevo. Estuviste {int((_now_epoch() - handoff.get('written_at', _now_epoch())) / 86400)} días ausente.")
         lines.append("")
