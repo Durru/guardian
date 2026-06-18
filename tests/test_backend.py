@@ -117,7 +117,7 @@ class TestConcienciaCore(unittest.TestCase):
 
     def test_save_learning(self):
         guardian_conciencia.save_learning(self.slug, {"type": "test", "message": "hello"})
-        branch_path = shared.get_branch_dir()
+        branch_path = shared.user_branch_path()
         learn_dir = branch_path / "projects" / self.slug / "learnings"
         files = list(learn_dir.glob("*.json"))
         self.assertEqual(len(files), 1)

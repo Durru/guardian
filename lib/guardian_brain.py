@@ -911,6 +911,11 @@ def write_observation(slug: str, obs_type: str, topic_key: str, content: str,
     """
     schema.init_project(slug)
     tags = tags or []
+    try:
+        import guardian_observer as observer_mod
+        imp = observer_mod.classify_importance(content)
+    except Exception:
+        imp = 0.7 if outcome in ("success", "failure") else 0.5
     node = {
         "kind": obs_type,
         "topic_key": topic_key,
@@ -920,7 +925,7 @@ def write_observation(slug: str, obs_type: str, topic_key: str, content: str,
         "outcome": outcome,
         "scope": scope,
         "tags": tags,
-        "importance": 0.7 if outcome in ("success", "failure") else 0.5,
+        "importance": imp,
         "confidence": 1.0,
     }
 

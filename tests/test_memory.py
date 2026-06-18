@@ -22,8 +22,10 @@ class TestMemoryCore(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp())
         self.slug = "testproj"
-        # Override MEMORY_DIR for testing
+        # Override paths for testing (v3 + v4)
         mem.MEMORY_DIR = self.tmpdir
+        mem.shared.MEMORY_DIR = self.tmpdir
+        mem.shared.BACKEND_DIR = self.tmpdir
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir)
@@ -159,6 +161,8 @@ class TestSemanticSearch(unittest.TestCase):
         self.tmpdir = Path(tempfile.mkdtemp())
         self.slug = "semtest"
         mem.MEMORY_DIR = self.tmpdir
+        mem.shared.MEMORY_DIR = self.tmpdir
+        mem.shared.BACKEND_DIR = self.tmpdir
         mem._ensure(self.slug)
         # Save some entries
         mem.cmd_save(self.slug, "landmark", "El proyecto usa React con TypeScript")
@@ -215,7 +219,7 @@ class TestSemanticSearch(unittest.TestCase):
     def test_cmd_index_creates_index(self):
         ret = mem.cmd_index(self.slug)
         self.assertEqual(ret, 0)
-        idx_file = self.tmpdir / self.slug / "memory-embeddings.json"
+        idx_file = mem._embed_index_file(self.slug)
         self.assertTrue(idx_file.exists())
         data = json.loads(idx_file.read_text())
         self.assertIn("meta", data)
@@ -262,7 +266,7 @@ class TestSemanticSearch(unittest.TestCase):
 
     def test_index_force_rebuild(self):
         mem.cmd_index(self.slug)
-        idx_file = self.tmpdir / self.slug / "memory-embeddings.json"
+        idx_file = mem._embed_index_file(self.slug)
         mtime_before = idx_file.stat().st_mtime
         mem.cmd_index(self.slug, force=True)
         mtime_after = idx_file.stat().st_mtime

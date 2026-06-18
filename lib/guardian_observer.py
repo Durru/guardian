@@ -118,7 +118,14 @@ def extract_topic_key(prompt: str) -> str:
     p = prompt.lower()
     scores = []
     for keywords, topic in TOPIC_PATTERNS:
-        score = sum(1 for k in keywords if k in p)
+        score = 0
+        for k in keywords:
+            if len(k) <= 2:
+                if k in p.split():
+                    score += 1
+            else:
+                if k in p:
+                    score += 1
         if score > 0:
             scores.append((score, topic))
     if not scores:
@@ -307,8 +314,9 @@ class Observer:
     def _on_prompt(self, event: dict) -> None:
         prompt = event.get("prompt", "")
         reason = infer_reason_from_prompt(prompt)
+        files = event.get("files_in_context") or []
         log_prompt(self.slug, prompt, reason, event.get("mode", ""),
-                   files=event.get("files_in_context"))
+                   files=files)
         imp = classify_importance(prompt, "chat.message")
         if imp > 0.5:
             try:
@@ -320,7 +328,7 @@ class Observer:
                     topic_key=topic_key or "general",
                     content=prompt[:200],
                     why=reason,
-                    where="",
+                    where=", ".join(files) if files else "",
                     outcome="info",
                     scope="project",
                     tags=[reason] if reason else [],

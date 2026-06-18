@@ -390,9 +390,9 @@ def save_learning(slug, entry):
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    # v4 path: branch learnings
+    # v4 path: user branch learnings
     try:
-        branch_path = shared.get_branch_dir()
+        branch_path = shared.user_branch_path()
         learn_dir = branch_path / "projects" / slug / "learnings"
         learn_dir.mkdir(parents=True, exist_ok=True)
         ts = int(time.time() * 1000)

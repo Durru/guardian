@@ -78,7 +78,14 @@ def _embed_text(text, idf, vocab):
 
 
 def _memory_file(slug):
+    v4 = shared._v4_project_root(slug) / "brain" / "memory.jsonl"
+    if v4.exists():
+        return v4
     return MEMORY_DIR / slug / "memory.jsonl"
+
+
+def _v4_memory_file(slug):
+    return shared._v4_project_root(slug) / "brain" / "memory.jsonl"
 
 
 def _ensure(slug):
@@ -117,7 +124,8 @@ def _read_entries(slug):
 
 
 def _write_entries(slug, entries):
-    mf = _memory_file(slug)
+    mf = _v4_memory_file(slug)
+    mf.parent.mkdir(parents=True, exist_ok=True)
     with open(mf, "w") as f:
         for e in entries:
             f.write(json.dumps(e, ensure_ascii=False) + "\n")
@@ -175,6 +183,9 @@ def cmd_save(slug, type_, content, file_="", line=0, scope="", ttl=None):
 
 
 def _embed_index_file(slug):
+    v4 = shared._v4_project_root(slug) / "brain" / "memory-embeddings.json"
+    if v4.parent.exists():
+        return v4
     return MEMORY_DIR / slug / "memory-embeddings.json"
 
 
