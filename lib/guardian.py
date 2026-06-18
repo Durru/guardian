@@ -2228,6 +2228,44 @@ def cmd_evolve(slug, cmd_args):
     return 0
 
 
+def cmd_learn(slug, cmd_args):
+    """v4.5.1: Governor adaptativo — aprende de feedback del usuario."""
+    import guardian_brain
+    if not cmd_args:
+        print("Uso: guardian learn <slug> <feedback>")
+        print("  Feedback: merge_was_wrong | discard_was_wrong | contradiction_was_false")
+        print("           merge_should_happen | discard_should_happen | contradiction_was_correct")
+        return 1
+    feedback = cmd_args[0]
+    valid = ("merge_was_wrong", "discard_was_wrong", "contradiction_was_false",
+             "merge_should_happen", "discard_should_happen", "contradiction_was_correct")
+    if feedback not in valid:
+        print(f"Feedback inválido: '{feedback}'. Usá uno de: {', '.join(valid)}")
+        return 1
+    result = guardian_brain.governor_learn(slug, feedback)
+    print(f"  ✓ Governor aprendió: {result['adjustments']}")
+    print(f"  Thresholds: importance_floor={result['thresholds']['importance_floor']:.2f}, "
+          f"duplicate={result['thresholds']['duplicate_threshold']:.2f}, "
+          f"contradiction={result['thresholds']['contradiction_threshold']:.2f}")
+    return 0
+
+
+def cmd_feedback(slug, cmd_args):
+    """v4.5.1: Registrar feedback del usuario para el clasificador neuronal."""
+    if not cmd_args:
+        print("Uso: guardian feedback <slug> <topic_key> [content]")
+        return 1
+    topic_key = cmd_args[0]
+    content = " ".join(cmd_args[1:]) if len(cmd_args) > 1 else ""
+    if not content:
+        print("  Necesitás el texto del prompt como segundo argumento.")
+        return 1
+    import guardian_observer
+    guardian_observer.record_feedback(slug, content, topic_key)
+    print(f"  ✓ Feedback guardado: topic={topic_key}")
+    return 0
+
+
 # ── cmd_consolidate ────────────────────────────────────────────
 
 # ── cmd_activate ───────────────────────────────────────────────
@@ -3425,6 +3463,8 @@ def main():
         print("  lineage <slug>                                          Ver árbol genealógico")
         print("  migrate <status|migrate|rollback> <slug>                Migrar v3 → v4 layout")
         print("  migrate-v45 <status|migrate> [slug] [--dry-run]         Migrar v4 → v4.5 unificado")
+        print("  learn <slug> <feedback>                                 Governor adaptativo (merge_was_wrong, etc.)")
+        print("  feedback <slug> <topic_key> <content>                    Entrenar clasificador neuronal")
         print()
         print("Stack:")
         print("  build|dev|test|lint|typecheck|deploy|logs [slug]")
@@ -3582,6 +3622,14 @@ def main():
     if cmd == "evolve":
         slug, rest = _resolve_slug(cmd_args)
         return cmd_evolve(slug, rest)
+
+    if cmd == "learn":
+        slug, rest = _resolve_slug(cmd_args)
+        return cmd_learn(slug, rest)
+
+    if cmd == "feedback":
+        slug, rest = _resolve_slug(cmd_args)
+        return cmd_feedback(slug, rest)
 
     if cmd == "update":
         return cmd_update(None, [])

@@ -9,16 +9,25 @@ import time
 import unittest
 from pathlib import Path
 
-# Setup isolated test env
-TMP = Path(tempfile.mkdtemp(prefix="guardian-v4-test-"))
-os.environ["GUARDIAN_DATA"] = str(TMP)
-os.environ["GUARDIAN_HOME"] = str(TMP)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-# Setup a minimal genome in TMP for the tests
-GENOME_DIR = TMP / "genome"
-GENOME_DIR.mkdir(parents=True, exist_ok=True)
-(GENOME_DIR / "identity.yaml").write_text("""\
-version: 4.0.0
+_ORIG_ENV = {}
+
+
+def _setup_env():
+    """Set up isolated test environment. Must be called in setUpClass."""
+    global _ORIG_ENV
+    _ORIG_ENV = {
+        "GUARDIAN_HOME": os.environ.get("GUARDIAN_HOME", ""),
+        "GUARDIAN_DATA": os.environ.get("GUARDIAN_DATA", ""),
+    }
+    tmp = Path(tempfile.mkdtemp(prefix="guardian-v4-test-"))
+    os.environ["GUARDIAN_DATA"] = str(tmp)
+    os.environ["GUARDIAN_HOME"] = str(tmp)
+    genome_dir = tmp / "genome"
+    genome_dir.mkdir(parents=True, exist_ok=True)
+    (genome_dir / "identity.yaml").write_text("""\
+version: 4.5.0
 creator: durru
 identity:
   name: Nexxoria Guardian
@@ -28,12 +37,16 @@ identity:
     - "Nunca sobrescribir sin preguntar"
     - "Razonar en base a lo que sabe, no a lo que se imagina"
 """)
+    return tmp
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-for m in list(sys.modules.keys()):
-    if m.startswith("guardian"):
-        del sys.modules[m]
+def _teardown_env():
+    """Restore environment."""
+    for k, v in _ORIG_ENV.items():
+        if v:
+            os.environ[k] = v
+        else:
+            os.environ.pop(k, None)
 
 
 # ── v4 Filesystem ──────────────────────────────────────────────
@@ -53,6 +66,36 @@ class TestV4Filesystem(unittest.TestCase):
 
 
 class TestV4Genoma(unittest.TestCase):
+
+    def setUp(self):
+        self._old_home = os.environ.get("GUARDIAN_HOME", "")
+        self._old_data = os.environ.get("GUARDIAN_DATA", "")
+        self._tmp = Path(tempfile.mkdtemp(prefix="guardian-v4-test-"))
+        os.environ["GUARDIAN_DATA"] = str(self._tmp)
+        os.environ["GUARDIAN_HOME"] = str(self._tmp)
+        genome_dir = self._tmp / "genome"
+        genome_dir.mkdir(parents=True, exist_ok=True)
+        (genome_dir / "identity.yaml").write_text("""\
+version: 4.5.0
+creator: durru
+identity:
+  name: Nexxoria Guardian
+  creator: durru
+  principles:
+    - "Proteger el proyecto antes que nada"
+""")
+
+    def tearDown(self):
+        if self._old_home:
+            os.environ["GUARDIAN_HOME"] = self._old_home
+        else:
+            os.environ.pop("GUARDIAN_HOME", None)
+        if self._old_data:
+            os.environ["GUARDIAN_DATA"] = self._old_data
+        else:
+            os.environ.pop("GUARDIAN_DATA", None)
+        import shutil
+        shutil.rmtree(self._tmp, ignore_errors=True)
 
     def test_load_genome_3_files(self):
         import guardian_genome

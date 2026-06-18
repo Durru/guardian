@@ -9,14 +9,7 @@ import unittest
 import uuid
 from pathlib import Path
 
-TMP = Path(tempfile.mkdtemp(prefix="guardian-phase3-test-"))
-os.environ["GUARDIAN_DATA"] = str(TMP)
-os.environ["GUARDIAN_HOME"] = str(TMP)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
-
-for m in list(sys.modules.keys()):
-    if m.startswith("guardian"):
-        del sys.modules[m]
 
 import guardian_brain  # noqa: E402
 import guardian_brain_schema  # noqa: E402
@@ -30,7 +23,10 @@ def _unique_slug(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
-class TestKnowledge(unittest.TestCase):
+from test_base import IsolatedTest
+
+
+class TestKnowledge(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("know")
@@ -75,7 +71,7 @@ class TestKnowledge(unittest.TestCase):
         self.assertIn("v17", tags)
 
 
-class TestSpecialization(unittest.TestCase):
+class TestSpecialization(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("spec")
@@ -118,7 +114,7 @@ class TestSpecialization(unittest.TestCase):
         self.assertNotIn("python", guardian_specialization.list_enabled(self.slug))
 
 
-class TestPlan(unittest.TestCase):
+class TestPlan(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("plan")
@@ -176,7 +172,7 @@ class TestPlan(unittest.TestCase):
         self.assertGreater(len(learnings), 0)
 
 
-class TestMaintain(unittest.TestCase):
+class TestMaintain(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("maint")
@@ -205,7 +201,7 @@ class TestMaintain(unittest.TestCase):
         self.assertIn("Health", formatted)
 
     def test_drift_detection(self):
-        project_root = TMP / "fake-project"
+        project_root = self._tmpdir / "fake-project"
         project_root.mkdir()
         (project_root / "main.py").write_text(
             "import psycopg2\nconn = psycopg2.connect('postgresql://localhost')"
@@ -215,11 +211,6 @@ class TestMaintain(unittest.TestCase):
                                         "importance": 0.8})
         report = guardian_maintain.health_report(self.slug, project_root=str(project_root))
         self.assertGreater(report["drift"]["count"], 0)
-
-
-def tearDownModule():
-    if TMP.exists():
-        shutil.rmtree(TMP, ignore_errors=True)
 
 
 if __name__ == "__main__":

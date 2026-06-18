@@ -15,15 +15,7 @@ import unittest
 import uuid
 from pathlib import Path
 
-TMP = Path(tempfile.mkdtemp(prefix="guardian-brain-test-"))
-os.environ["GUARDIAN_DATA"] = str(TMP)
-os.environ["GUARDIAN_HOME"] = str(TMP)
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
-
-for m in list(sys.modules.keys()):
-    if m.startswith("guardian"):
-        del sys.modules[m]
 
 import guardian_brain  # noqa: E402
 import guardian_brain_schema  # noqa: E402
@@ -33,7 +25,10 @@ def _unique_slug(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
-class TestSchema(unittest.TestCase):
+from test_base import IsolatedTest
+
+
+class TestSchema(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("schema")
@@ -504,11 +499,6 @@ class TestGlobal(unittest.TestCase):
         result = guardian_brain.global_promote(slug, nid, "semantic")
         self.assertTrue(result["ok"])
         self.assertIn("promoted_id", result)
-
-
-def tearDownModule():
-    if TMP.exists():
-        shutil.rmtree(TMP, ignore_errors=True)
 
 
 if __name__ == "__main__":

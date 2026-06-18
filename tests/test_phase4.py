@@ -10,14 +10,7 @@ import unittest
 import uuid
 from pathlib import Path
 
-TMP = Path(tempfile.mkdtemp(prefix="guardian-phase4-test-"))
-os.environ["GUARDIAN_DATA"] = str(TMP)
-os.environ["GUARDIAN_HOME"] = str(TMP)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
-
-for m in list(sys.modules.keys()):
-    if m.startswith("guardian"):
-        del sys.modules[m]
 
 import guardian_brain  # noqa: E402
 import guardian_brain_migration  # noqa: E402
@@ -33,7 +26,10 @@ def _unique_slug(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
-class TestCapability(unittest.TestCase):
+from test_base import IsolatedTest
+
+
+class TestCapability(IsolatedTest):
 
     def test_status_returns_default_card(self):
         card = guardian_capability.load_card("test-status-card")
@@ -70,7 +66,7 @@ class TestCapability(unittest.TestCase):
         self.assertTrue(result["ok"])
 
 
-class TestGlobal(unittest.TestCase):
+class TestGlobal(IsolatedTest):
 
     def setUp(self):
         guardian_brain_schema.init_global()
@@ -112,7 +108,7 @@ class TestGlobal(unittest.TestCase):
         self.assertIn("promoted_id", result)
 
 
-class TestPublish(unittest.TestCase):
+class TestPublish(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("pub")
@@ -159,7 +155,7 @@ class TestPublish(unittest.TestCase):
         self.assertNotIn("user:pass", sanitized)
 
 
-class TestLineage(unittest.TestCase):
+class TestLineage(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("lin")
@@ -189,7 +185,7 @@ class TestLineage(unittest.TestCase):
         self.assertIn("odoo@1.0", tree)
 
 
-class TestMigration(unittest.TestCase):
+class TestMigration(IsolatedTest):
 
     def setUp(self):
         self.slug = _unique_slug("mig")
@@ -252,14 +248,6 @@ class TestMigration(unittest.TestCase):
         guardian_brain_migration.migrate(self.slug, dry_run=False)
         result = guardian_brain_migration.rollback(self.slug)
         self.assertTrue(result["ok"])
-
-
-def tearDownModule():
-    if TMP.exists():
-        shutil.rmtree(TMP, ignore_errors=True)
-    tpl_dir = Path.home() / ".guardian" / "templates"
-    if tpl_dir.exists():
-        shutil.rmtree(tpl_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

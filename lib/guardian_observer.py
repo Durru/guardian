@@ -318,11 +318,11 @@ class Observer:
         files = event.get("files_in_context") or []
         log_prompt(self.slug, prompt, reason, event.get("mode", ""),
                    files=files)
-        imp = classify_importance(prompt, "chat.message")
+        imp = classify_importance(prompt, "chat.message", slug=self.slug)
         if imp > 0.5:
             try:
                 import guardian_brain as brain
-                topic_key = extract_topic_key(prompt)
+                topic_key = extract_topic_key(prompt, slug=self.slug)
                 brain.write_observation(
                     slug=self.slug,
                     obs_type="pattern" if topic_key else "note",

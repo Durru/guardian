@@ -9,15 +9,7 @@ import time
 import unittest
 from pathlib import Path
 
-TMP = Path(tempfile.mkdtemp(prefix="guardian-obs-test-"))
-os.environ["GUARDIAN_DATA"] = str(TMP)
-os.environ["GUARDIAN_HOME"] = str(TMP)
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
-
-for m in list(sys.modules.keys()):
-    if m.startswith("guardian"):
-        del sys.modules[m]
 
 
 SLUG = "obs-test-proj"
@@ -27,6 +19,11 @@ class TestObservations(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls._tmp = Path(tempfile.mkdtemp(prefix="guardian-obs-test-"))
+        cls._old_home = os.environ.get("GUARDIAN_HOME", "")
+        cls._old_data = os.environ.get("GUARDIAN_DATA", "")
+        os.environ["GUARDIAN_DATA"] = str(cls._tmp)
+        os.environ["GUARDIAN_HOME"] = str(cls._tmp)
         import guardian_brain_schema as schema
         schema.init_project(SLUG)
 
@@ -170,6 +167,19 @@ class TestObservations(unittest.TestCase):
         from guardian_observer import extract_topic_key
         self.assertEqual(extract_topic_key("hola que tal"), "")
         self.assertEqual(extract_topic_key(""), "")
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._old_home:
+            os.environ["GUARDIAN_HOME"] = cls._old_home
+        else:
+            os.environ.pop("GUARDIAN_HOME", None)
+        if cls._old_data:
+            os.environ["GUARDIAN_DATA"] = cls._old_data
+        else:
+            os.environ.pop("GUARDIAN_DATA", None)
+        import shutil
+        shutil.rmtree(cls._tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

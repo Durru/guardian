@@ -224,11 +224,13 @@ def _connect(db_path: Path) -> sqlite3.Connection:
 
 
 def _reset_conn_cache():
-    """Clear connection cache. By default does NOT close conns (faster for tests).
-
-    Pass close=True to also close all cached conns.
-    """
+    """Clear connection cache and close all cached connections."""
     global _CONN_CACHE
+    for conn in _CONN_CACHE.values():
+        try:
+            conn.close()
+        except Exception:
+            pass
     _CONN_CACHE = {}
 
 
