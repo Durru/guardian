@@ -321,6 +321,43 @@ def _apply_schema(db_path: Path, default_level: str):
         conn.close()
 
 
+BRAIN_MARKER = ".brain-init"
+
+
+def is_initialized(slug: str) -> bool:
+    """Check if brain has been lazily initialized (marker file exists)."""
+    return (brain_dir(slug) / BRAIN_MARKER).exists()
+
+
+GLOBAL_INIT_FLAG = False
+
+
+def is_global_initialized() -> bool:
+    return GLOBAL_INIT_FLAG
+
+
+def ensure_brain(slug: str) -> bool:
+    """Lazy init: create marker + 4 DBs only on first access. Idempotent."""
+    if is_initialized(slug):
+        return True
+    r = init_project(slug)
+    if r.get("ok"):
+        (brain_dir(slug) / BRAIN_MARKER).write_text(str(_now_epoch()), encoding="utf-8")
+        return True
+    return False
+
+
+def ensure_global() -> bool:
+    global GLOBAL_INIT_FLAG
+    if GLOBAL_INIT_FLAG:
+        return True
+    r = init_global()
+    if r.get("ok"):
+        GLOBAL_INIT_FLAG = True
+        return True
+    return False
+
+
 def init_project(slug: str) -> dict:
     """Create all 4 project DBs if they don't exist. Returns report."""
     if not slug:
@@ -342,8 +379,10 @@ def _slugify(name: str) -> str:
 
 
 def init_global() -> dict:
+    global GLOBAL_INIT_FLAG
     """Create all 3 global DBs if they don't exist. Returns report."""
     global_brain_dir().mkdir(parents=True, exist_ok=True)
+    GLOBAL_INIT_FLAG = True
     results = {}
     for level in GLOBAL_LEVELS:
         db = global_db_path(level)

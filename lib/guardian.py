@@ -1597,6 +1597,7 @@ def cmd_context(slug, cmd_args):
     config = _read_config(slug)
     if not config:
         return err(f"Proyecto '{slug}' no encontrado.")
+    _ensure_guardian_md(slug)
 
     mode = "normal"
     scope_filter = None
@@ -2386,20 +2387,138 @@ def cmd_activate(slug=None, skip_conciencia=False):
     return 0
 
 
+def _ensure_brain(slug):
+    """Lazy: create brain marker + DBs on first access."""
+    import guardian_brain_schema as _schema
+    _schema.ensure_brain(slug)
+
+
+def _ensure_skills(slug):
+    """Lazy: absorb skills only on first RAG request."""
+    import guardian_brain_schema as _schema
+    if not _schema.is_initialized(slug):
+        _schema.ensure_brain(slug)
+    skills_data = _read_skills_json(slug)
+    if skills_data.get("relevant") or skills_data.get("hot"):
+        return
+    subprocess.run([sys.executable, str(ABSORB_SCRIPT), "scan"], capture_output=True, text=True, timeout=60)
+    subprocess.run([sys.executable, str(ABSORB_SCRIPT), "match", slug], capture_output=True, text=True, timeout=60)
+    subprocess.run([sys.executable, str(ABSORB_SCRIPT), "ingest", slug], capture_output=True, text=True, timeout=60)
+
+
+def _ensure_codegraph(slug):
+    """Lazy: index codegraph only on first query."""
+    import guardian_brain_symbols as _gbs
+    if _gbs.is_indexed(slug):
+        return
+    config = _read_config(slug)
+    if config:
+        source_root = Path(config.get("project_root", ""))
+        if source_root.exists():
+            _gbs.ensure_index(slug, source_root)
+
+
+def _ensure_guardian_md(slug):
+    """Lazy: generate GUARDIAN.md only when context is requested."""
+    import guardian_brain as _gb
+    gmd_path = _gb.schema.guardian_md_path(slug)
+    if gmd_path.exists():
+        return
+    _gb.regenerate_guardian_md(slug)
+
+
 def cmd_init(slug=None):
-    """Quick bootstrap: detect → setup auto → activate sin conciencia."""
+    """v4.8: Lightweight bootstrap — solo config + brain marker.
+    Todo lo demás (skills, codegraph, GUARDIAN.md, conciencia) es lazy/on-demand."""
     slug = slug or _find_slug()
     if not slug:
         cwd = Path.cwd()
         slug = _slugify(cwd.name)
     config = _read_config(slug)
     if config:
-        print(_("  ⚠ Proyecto '{slug}' ya está configurado.", slug=slug))
-        print(_("     Ejecutá 'guardian activate {slug}' si necesitás re-activar.", slug=slug))
+        print(_("  ⚠ Proyecto '{slug}' ya está listo. Todo se carga bajo demanda.", slug=slug))
         return 0
     print(_("  🚀 Inicializando Guardian en '{slug}'...", slug=slug))
-    cmd_setup(slug, auto=True)
-    return cmd_activate(slug, skip_conciencia=True)
+    project_root = Path.cwd()
+    detected = _detect_stack(project_root)
+    stack_type = detected.get("type", "unknown")
+    framework = detected.get("framework", "")
+    config_data = {
+        "slug": slug,
+        "project_root": str(project_root),
+        "stack": {
+            "detected": stack_type,
+            "framework": framework,
+            "runtime": detected.get("runtime", "python" if stack_type == "python" else "node"),
+            "test": detected.get("test_cmd", ""),
+            "lint": detected.get("lint_cmd", ""),
+            "build": detected.get("build_cmd", ""),
+            "dev": detected.get("dev_cmd", ""),
+        },
+        "docs": {},
+        "rules": [],
+        "protected_paths": [],
+        "created_at": _ts(),
+        "updated_at": _ts(),
+    }
+    _write_config(slug, config_data)
+    _ensure_brain(slug)
+    print(_("  ✅ Guardian listo para '{slug}' (lazy: skills, codegraph, contexto bajo demanda)", slug=slug))
+    print(_("     Modo: plan"))
+    return 0
+
+
+def cmd_activate(slug=None, skip_conciencia=False):
+    """v4.8: Activar completo (legacy). Preferí 'guardian init' para bootstrap rápido.
+    Ahora hace init + brain + absorb + codegraph inline."""
+    if isinstance(slug, list):
+        args = slug
+        slug = None
+        skip_conciencia = "--skip-conciencia" in args or "--fast" in args
+
+    slug = slug or _find_slug()
+    if not slug:
+        cwd = Path.cwd()
+        slug = _slugify(cwd.name)
+
+    # init si no existe
+    config = _read_config(slug)
+    if not config:
+        cmd_init(slug)
+
+    # brain schema + marker
+    _ensure_brain(slug)
+
+    print(_("  Absorbiendo skills..."))
+    _ensure_skills(slug)
+
+    print(_("  Generando contexto inicial..."))
+    _ensure_guardian_md(slug)
+
+    print(_("  Indexando CodeGraph..."))
+    _ensure_codegraph(slug)
+
+    if not skip_conciencia:
+        import guardian_conciencia
+        print(_("  Ciclo de conciencia inicial..."))
+        mode_state = shared.read_mode_state(slug)
+        mode = mode_state.get("mode", shared.DEFAULT_MODE)
+        try:
+            import urllib.request
+            data = json.dumps({"slug": slug, "question": f"SOY: activar guardian en {slug}", "mode": mode}).encode()
+            req = urllib.request.Request("http://127.0.0.1:9787/conciencia/cycle", data=data,
+                                         headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                result = json.loads(resp.read())
+            print(_("    Acción: {action} (confianza {confidence})", action=result.get("action", "—"), confidence=result.get("confidence", 0.0)))
+        except Exception:
+            import guardian_conciencia
+            result = guardian_conciencia.run_cycle(slug, question=f"SOY: activar guardian en {slug}", mode=mode)
+            print(_("    Acción: {action} (confianza {confidence})", action=result.get("action", "—"), confidence=result.get("confidence", 0.0)))
+
+    print()
+    print(_("  ✅ Guardian activado para '{slug}'", slug=slug))
+    return 0
 
 
 def cmd_consolidate(slug, cmd_args):
@@ -2778,6 +2897,10 @@ def _resolve_slug_or_pwd(args, positional_idx=0):
 
 def cmd_brain(args):
     """Dispatch to guardian_brain.py for all brain operations."""
+    if args:
+        slug = args[0] if not args[0].startswith("-") else _find_slug()
+        if slug:
+            _ensure_brain(slug)
     if not args:
         print("Uso: guardian brain <status|read|write|query|list|delete|count|gc|start|continue|end|reflect|orchestrate|guardian|regenerate-guardian|promote|auto-compact> [args...]")
         return 1
@@ -3162,6 +3285,7 @@ def cmd_migrate(args):
 
 def cmd_codegraph(slug, cmd_args):
     """guardian codegraph <index|query|status> [slug] [query...]"""
+    _ensure_codegraph(slug)
     if not cmd_args:
         print("Uso: guardian codegraph <index|query|status> [slug] [query...]")
         return 1
@@ -3260,6 +3384,13 @@ def cmd_rag(args):
     if not args:
         print("Uso: guardian rag <query> [--slug <slug>] [--top-k <n>] [--json] [--scope <path>]")
         return 1
+    for a in args:
+        if a.startswith("--slug") and "=" in a:
+            s = a.split("=", 1)[1]
+            _ensure_skills(s)
+        elif not a.startswith("-"):
+            _ensure_skills(_find_slug() or "")
+            break
     cmd = [sys.executable, str(RAG_SCRIPT)] + args
     try:
         result = subprocess.run(cmd)
@@ -3441,7 +3572,7 @@ def cmd_compact_memory(args):
 # ── main ────────────────────────────────────────────────────────
 def main():
     if _is_first_run() and len(sys.argv) >= 2 and sys.argv[1] not in ("--help", "-h", "--ayuda", "--version", "-v"):
-        print("🛡️  Nexxoria Guardian v4.6.0")
+        print("🛡️  Nexxoria Guardian v4.8.0")
         print()
         print(_("  👋 Parece que es la primera vez que usás Guardian."))
         print(_("     Para empezar, andá a tu proyecto y ejecutá:"))
@@ -3452,14 +3583,14 @@ def main():
         print()
 
     if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h", "--ayuda"):
-        print("🛡️  Nexxoria Guardian v4.6.0")
+        print("🛡️  Nexxoria Guardian v4.8.0")
 
         print()
         print("Usage: guardian <command> [args...]")
         print()
         print("Proyecto:")
-        print("  init [slug]                  Bootstrap rápido (detect → setup → activate --fast)")
-        print("  activate [slug] [--fast]     Activar Guardian (setup + branch + brain + absorb + docs + codegraph + conciencia)")
+        print("  init [slug]                  Inicializar proyecto (config + brain marker, ~2s)")
+        print("  activate [slug] [--fast]     Inicialización completa (legacy, todo inline)")
         print("  detect                       Detectar proyecto actual")
         print("  status [slug]                Dashboard del proyecto")
         print("  check [slug]                 Verificar reglas y paths protegidos")
@@ -3547,7 +3678,7 @@ def main():
         return 0
 
     if sys.argv[1] in ("--version", "-v"):
-        print("Nexxoria Guardian v4.6.0")
+        print("Nexxoria Guardian v4.8.0")
         return 0
 
     args = sys.argv[1:]

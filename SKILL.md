@@ -8,7 +8,7 @@ metadata:
   workflow: coding
 ---
 
-# Nexxoria Guardian v4 — Ser Orgánico
+# Nexxoria Guardian v4.8 — Ser Orgánico (Lazy Guardian)
 
 Guardian v4 es un ser orgánico: cerebro (LLM + conciencia + meta-conciencia + RAG), ojos (contexto + codegraph), manos (CLI + hooks + git), piernas (backend :9787 + scheduler) y nanos (MCP tools).
 

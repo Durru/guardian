@@ -39,7 +39,7 @@ consciousness:
 """)
 
 print("=" * 60)
-print("🧠  Guardian Neural Demo — v4.6.0")
+print("🧠  Guardian Neural Demo — v4.8.0")
 print("=" * 60)
 
 # ── A: Embeddings ──────────────────────────────────────────────────────

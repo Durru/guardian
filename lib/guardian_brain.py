@@ -317,11 +317,17 @@ def _dict_to_node_fields(node: dict) -> dict:
 # ── Public API: read / write / query / list / delete ───────────────────
 
 
+def _lazy_ensure(slug: str, level: str = "semantic"):
+    """Lazy init brain if not yet initialized."""
+    schema.ensure_brain(slug)
+    return schema.brain_db_path(slug, level)
+
+
 def read(slug: str, level: str, node_id: str) -> dict | None:
     """Read a single node by ID. Updates last_accessed, access_count, and spikes activation."""
     if level not in schema.PROJECT_LEVELS:
         raise ValueError(f"Invalid project level: {level}")
-    db = schema.brain_db_path(slug, level)
+    db = _lazy_ensure(slug, level)
     if not db.exists():
         return None
     conn = _connect(db)
@@ -352,7 +358,7 @@ def write(slug: str, level: str, node: dict) -> dict:
     """
     if level not in schema.PROJECT_LEVELS:
         raise ValueError(f"Invalid project level: {level}")
-    db = schema.brain_db_path(slug, level)
+    db = _lazy_ensure(slug, level)
     conn = _connect(db)
     try:
         fields = _dict_to_node_fields(node)
@@ -414,7 +420,7 @@ def query(slug: str, level: str, q: str, top_k: int = 5,
     """
     if level not in schema.PROJECT_LEVELS:
         raise ValueError(f"Invalid project level: {level}")
-    db = schema.brain_db_path(slug, level)
+    db = _lazy_ensure(slug, level)
     if not db.exists():
         return []
     q_embed = embed(q)
@@ -460,7 +466,7 @@ def list_nodes(slug: str, level: str, filters: dict | None = None,
     """List nodes with optional filters. Set include_embedding=True for kNN."""
     if level not in schema.PROJECT_LEVELS:
         raise ValueError(f"Invalid project level: {level}")
-    db = schema.brain_db_path(slug, level)
+    db = _lazy_ensure(slug, level)
     if not db.exists():
         return []
     conn = _connect(db)
@@ -505,7 +511,7 @@ def delete(slug: str, level: str, node_id: str) -> dict:
     """Hard delete a node by ID."""
     if level not in schema.PROJECT_LEVELS:
         raise ValueError(f"Invalid project level: {level}")
-    db = schema.brain_db_path(slug, level)
+    db = _lazy_ensure(slug, level)
     if not db.exists():
         return {"ok": False, "error": "DB does not exist"}
     conn = _connect(db)
@@ -522,7 +528,7 @@ def count(slug: str, level: str, filters: dict | None = None) -> int:
     """Count nodes matching filters."""
     if level not in schema.PROJECT_LEVELS:
         raise ValueError(f"Invalid project level: {level}")
-    db = schema.brain_db_path(slug, level)
+    db = _lazy_ensure(slug, level)
     if not db.exists():
         return 0
     conn = _connect(db)

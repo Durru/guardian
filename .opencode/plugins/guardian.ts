@@ -573,17 +573,31 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
       }
     },
 
-    // ── v4.1.0: session.created — SOLO GUARDIAN.md (~25 líneas) ──
+    // ── v4.8.0: session.created — contexto mínimo + auto-init ──
     "session.created": async (_input: any, output: any) => {
       try {
+        guardian("init", slug)
         currentMode = guardian("mode", slug, "status") || "plan"
         output.context = output.context || []
 
-        const gmd = guardian("brain", "guardian", slug)
-        if (gmd) {
-          output.context.push("## Guardian\n" + gmd)
+        // Solo contexto mínimo — todo lo demás bajo demanda
+        output.context.push("## Guardian\nSlug: " + slug + " | Mode: " + currentMode)
+
+        // Análisis del primer mensaje para detectar modo
+        if (_input?.content || _input?.text) {
+          const text = (_input.content || _input.text || "").toLowerCase()
+          const planKw = ["plan", "think", "analyze", "design", "explore", "investigate", "diseñar", "analizar", "explorar"]
+          const buildKw = ["build", "implement", "fix", "add", "create", "make", "change", "refactor", "hacer", "crear", "implementar"]
+          const planScore = planKw.filter(k => text.includes(k)).length
+          const buildScore = buildKw.filter(k => text.includes(k)).length
+          if (planScore > buildScore && planScore >= 2) {
+            guardian("mode", slug, "plan", "auto: first message")
+            currentMode = "plan"
+          } else if (buildScore > planScore && buildScore >= 2) {
+            guardian("mode", slug, "build", "auto: first message")
+            currentMode = "build"
+          }
         }
-        output.context.push("Guardian tools: nexxoria-guardian_status, nexxoria-guardian_conciencia, nexxoria-guardian_rag, nexxoria-guardian_mode, nexxoria-guardian_brain_read, nexxoria-guardian_brain_query, nexxoria-guardian_brain_write, nexxoria-guardian_brain_reflect, nexxoria-guardian_session_end, nexxoria-guardian_query_smart, nexxoria-guardian_codegraph_index, nexxoria-guardian_codegraph_status, nexxoria-guardian_knowledge_research, nexxoria-guardian_specialization_enable, nexxoria-guardian_maintain, nexxoria-guardian_publish, nexxoria-guardian_clone, nexxoria-guardian_capability_status, nexxoria-guardian_capability_routing, nexxoria-guardian_compact_now, nexxoria-guardian_check_permission, nexxoria-guardian_why_blocked, nexxoria-guardian_analyze_intent, nexxoria-guardian_save_observation, nexxoria-guardian_get_observation, nexxoria-guardian_get_last_good, nexxoria-guardian_plan_or_act, nexxoria-guardian_compact_memory")
       } catch {
         // silent
       }

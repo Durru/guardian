@@ -403,6 +403,30 @@ class CodeGraph:
 # ── Module-level helpers ──────────────────────────────────────────
 
 
+def is_indexed(slug: str) -> bool:
+    """Check if codegraph has been indexed for this project."""
+    db = schema.brain_db_path(slug, "semantic")
+    if not db.exists():
+        return False
+    try:
+        conn = sqlite3.connect(str(db))
+        count = conn.execute("SELECT COUNT(*) FROM codegraph_symbols").fetchone()[0]
+        conn.close()
+        return count > 0
+    except Exception:
+        return False
+
+
+def ensure_index(slug: str, source_root: Path = None, full: bool = True) -> dict:
+    """Lazy index: skip if already indexed."""
+    if is_indexed(slug):
+        return {"ok": True, "indexed": False, "symbols": 0}
+    if source_root is None:
+        schema.ensure_brain(slug)
+        return {"ok": True, "indexed": False, "symbols": 0, "skipped": "no source_root"}
+    return index_project(slug, source_root, full)
+
+
 def get_codegraph(slug: str, project_root: Path = None) -> CodeGraph:
     """Get or create the CodeGraph for a project."""
     if project_root is None:
