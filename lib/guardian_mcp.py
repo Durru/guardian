@@ -120,7 +120,7 @@ TOOLS = [
     },
     {
         "name": "branch_fork",
-        "description": "Crear una rama para un usuario",
+        "description": "New una rama para un usuario",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -167,7 +167,7 @@ TOOLS = [
     },
     {
         "name": "forja_list",
-        "description": "Listar inventario de módulos, endpoints y MCP tools",
+        "description": "List inventario de módulos, endpoints y MCP tools",
         "inputSchema": {
             "type": "object",
             "properties": {},
