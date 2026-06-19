@@ -573,30 +573,18 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
       }
     },
 
-    // ── v4.8.0: session.created — contexto mínimo + auto-init ──
+    // ── v4.8.0: session.created — GUARDIAN.md completo + auto-init ──
     "session.created": async (_input: any, output: any) => {
       try {
         guardian("init", slug)
-        currentMode = guardian("mode", slug, "status") || "plan"
         output.context = output.context || []
 
-        // Solo contexto mínimo — todo lo demás bajo demanda
-        output.context.push("## Guardian\nSlug: " + slug + " | Mode: " + currentMode)
-
-        // Análisis del primer mensaje para detectar modo
-        if (_input?.content || _input?.text) {
-          const text = (_input.content || _input.text || "").toLowerCase()
-          const planKw = ["plan", "think", "analyze", "design", "explore", "investigate", "diseñar", "analizar", "explorar"]
-          const buildKw = ["build", "implement", "fix", "add", "create", "make", "change", "refactor", "hacer", "crear", "implementar"]
-          const planScore = planKw.filter(k => text.includes(k)).length
-          const buildScore = buildKw.filter(k => text.includes(k)).length
-          if (planScore > buildScore && planScore >= 2) {
-            guardian("mode", slug, "plan", "auto: first message")
-            currentMode = "plan"
-          } else if (buildScore > planScore && buildScore >= 2) {
-            guardian("mode", slug, "build", "auto: first message")
-            currentMode = "build"
-          }
+        // GUARDIAN.md COMPLETO siempre en contexto
+        const gmd = guardian("brain", "guardian", slug)
+        if (gmd) {
+          output.context.push("## Guardian — " + slug + "\n" + gmd)
+        } else {
+          output.context.push("## Guardian — " + slug + "\nSlug: " + slug)
         }
       } catch {
         // silent
@@ -639,10 +627,9 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
       }
     },
 
-    // ── v4.1.0: experimental.session.compacting — re-inyecta GUARDIAN.md ──
+    // ── v4.8.0: experimental.session.compacting — re-inyecta GUARDIAN.md ──
     "experimental.session.compacting": async (_input: any, output: any) => {
       try {
-        currentMode = guardian("mode", slug, "status") || "plan"
         output.context = output.context || []
 
         const gmd = guardian("brain", "guardian", slug)
@@ -655,21 +642,7 @@ export const GuardianPlugin: Plugin = async ({ project, client, $, directory, wo
     },
 
     "tui.prompt.append": async (input: any) => {
-      if (!input.text) return
-      const t = input.text.toLowerCase()
-      const planKw = ["plan", "think", "analyze", "design", "architect", "explore", "investigate", "diseñar", "analizar", "explorar"]
-      const buildKw = ["build", "implement", "fix", "add", "create", "make", "change", "write", "refactor", "construir", "implementar", "crear"]
-      const planScore = planKw.filter(k => t.includes(k)).length
-      const buildScore = buildKw.filter(k => t.includes(k)).length
-      if (planScore > buildScore && planScore >= 2) {
-        guardian("mode", slug, "plan", "auto: prompt keywords")
-        currentMode = "plan"
-        invalidateCache()
-      } else if (buildScore > planScore && buildScore >= 2) {
-        guardian("mode", slug, "build", "auto: prompt keywords")
-        currentMode = "build"
-        invalidateCache()
-      }
+      // No more plan/build mode switching. Flow selector is in guardian-agent.md.
     },
 
     "shell.env": async (_input: any, output: any) => {

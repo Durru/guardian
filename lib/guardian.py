@@ -2406,6 +2406,29 @@ def _ensure_skills(slug):
     subprocess.run([sys.executable, str(ABSORB_SCRIPT), "ingest", slug], capture_output=True, text=True, timeout=60)
 
 
+def _detect_flow(text: str) -> str:
+    """Flow selector based on user input keywords (regex, no LLM).
+    Returns: direct | implementar | depurar | arquitecto | desplegar | investigar
+    """
+    t = text.lower()
+    if any(kw in t for kw in ["no funciona", "error", "bug", "falla", "falló", "exception", "traceback"]):
+        return "depurar"
+    if any(kw in t for kw in ["deploy", "publicá", "liberá", "subí", "release", "publish"]):
+        return "desplegar"
+    if any(kw in t for kw in ["diseñá", "arquitectura", "estructura", "cómo diseño", "patrón", "arquitecto"]):
+        return "arquitecto"
+    if any(kw in t for kw in ["cómo", "qué es", "analizá", "investigá", "explorá", "dónde", "cuál es"]):
+        return "investigar"
+    if any(kw in t for kw in ["agregá", "agrega", "cambiá", "cambia", "hacé", "haz", "creá", "crea",
+                               "modificá", "modifica", "implementá", "implementa", "escribí", "escribe",
+                               "sacá", "saca", "borrá", "borra", "añadí", "añade", "actualizá", "actualiza"]):
+        return "implementar"
+    # Simple / cosmetic changes: short text, no complexity markers
+    if len(t) < 60 and not any(kw in t for kw in ["pero", "sin embargo", "complejo", "análisis"]):
+        return "direct"
+    return "investigar"
+
+
 def _ensure_codegraph(slug):
     """Lazy: index codegraph only on first query."""
     import guardian_brain_symbols as _gbs
@@ -3589,8 +3612,8 @@ def main():
         print("Usage: guardian <command> [args...]")
         print()
         print("Proyecto:")
-        print("  init [slug]                  Inicializar proyecto (config + brain marker, ~2s)")
-        print("  activate [slug] [--fast]     Inicialización completa (legacy, todo inline)")
+        print("  init [slug]                  Inicializar proyecto (~2s, resto on-demand)")
+        print("  activate [slug] [--fast]     Inicialización completa (legacy)")
         print("  detect                       Detectar proyecto actual")
         print("  status [slug]                Dashboard del proyecto")
         print("  check [slug]                 Verificar reglas y paths protegidos")

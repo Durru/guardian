@@ -966,7 +966,7 @@ def main():
 
 # ── GUARDIAN.md (cerebro esencial, siempre cargado) ─────────────────
 
-GUARDIAN_MD_MAX_LINES = 30
+GUARDIAN_MD_MAX_LINES = 200
 
 
 def read_guardian_md(slug: str) -> str:
@@ -1007,44 +1007,62 @@ def write_guardian_md(slug: str, content: str) -> dict:
 
 
 def generate_guardian_md(slug: str) -> str:
-    """Generate compact GUARDIAN.md (~25 lines, estilo CLAUDE.md).
+    """Generate compact GUARDIAN.md (hasta 200 lineas, estilo CLAUDE.md).
 
-    Secciones: Objetivo, Stack, Estado actual, Decisiones activas, Últimos errores.
-    No se regenera desde cero — se escribe progresivamente con append/compact.
+    Secciones: Objetivo, Stack, Preferencias, Estado, Decisiones, Aprendizajes, Errores.
     """
     schema.init_project(slug)
     parts = [f"# GUARDIAN — {slug}", ""]
 
-    # Objetivo
     goal = list_nodes(slug, "semantic", filters={"kind": "goal", "min_importance": 0.7}, limit=1)
     if goal:
         parts.append(f"## Objetivo\n{goal[0]['content']}\n")
     else:
         parts.append("## Objetivo\n—\n")
 
-    # Stack
     stack = list_nodes(slug, "semantic", filters={"kind": "stack", "min_importance": 0.5}, limit=1)
     if stack:
         parts.append(f"## Stack\n{stack[0]['content']}\n")
 
-    # Decisiones activas (máximo 5)
-    decisions = list_nodes(slug, "semantic", filters={"kind": "decision", "min_importance": 0.6}, limit=5)
-    if decisions:
-        parts.append("## Decisiones activas")
-        for d in decisions:
-            topic = d.get("tags", "")
-            topic_str = f" [{topic[0]}]" if isinstance(topic, list) and topic else ""
-            outcome = d.get("outcome", "")
-            marker = {"success": "✅", "failure": "❌", "warning": "⚠️", "info": "ℹ️"}.get(outcome, "")
-            parts.append(f"- {marker}{topic_str} {d['content'][:80]}")
+    prefs = list_nodes(slug, "semantic", filters={"kind": "user_preference"}, limit=20)
+    if prefs:
+        parts.append("## Preferencias del usuario")
+        for p in prefs:
+            marker = "✅" if p.get("outcome") == "success" else "•"
+            topic = p.get("topic_key", "")
+            parts.append(f"- {marker} {topic}={p['content'][:100]}")
         parts.append("")
 
-    # Últimos errores
-    errors = list_nodes(slug, "reflection", filters={"min_importance": 0.6}, limit=3)
-    if errors:
+    decs = list_nodes(slug, "semantic", filters={"kind": "decision", "min_importance": 0.5}, limit=10)
+    if decs:
+        parts.append("## Decisiones activas")
+        for d in decs:
+            topic = d.get("tags", "")
+            ts = f" [{topic[0]}]" if isinstance(topic, list) and topic else ""
+            outcome = d.get("outcome", "")
+            marker = {"success": "✅", "failure": "❌", "warning": "⚠️", "info": "ℹ️"}.get(outcome, "")
+            parts.append(f"- {marker}{ts} {d['content'][:100]}")
+        parts.append("")
+
+    learn = list_nodes(slug, "semantic", filters={"kind": "learning", "min_importance": 0.5}, limit=5)
+    if learn:
+        parts.append("## Aprendizajes recientes")
+        for l in learn:
+            parts.append(f"- {l['content'][:100]}")
+        parts.append("")
+
+    errs = list_nodes(slug, "reflection", filters={"min_importance": 0.5}, limit=5)
+    if errs:
         parts.append("## Últimos errores")
-        for e in errors:
+        for e in errs:
             parts.append(f"- {e['content'][:100]}")
+        parts.append("")
+
+    tasks = list_nodes(slug, "semantic", filters={"kind": "task", "min_importance": 0.3}, limit=5)
+    if tasks:
+        parts.append("## Tareas activas")
+        for t in tasks:
+            parts.append(f"- {t['content'][:100]}")
         parts.append("")
 
     return "\n".join(parts)
